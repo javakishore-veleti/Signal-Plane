@@ -6,7 +6,7 @@
 Work is tracked in beads. Do not keep plans in markdown scratch files or TODO comments; they do not survive a session.
 
 ```bash
-bd ready --json              # the claimable frontier
+bd ready --type task --json  # the claimable frontier
 bd update <id> --claim       # take work atomically
 bd close <id> --reason "..."
 bd dolt push                 # end of session, always

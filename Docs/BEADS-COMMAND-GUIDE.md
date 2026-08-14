@@ -28,7 +28,7 @@ bd prime                       # workflow context written for agents
 
 ## Signal-Plane: from empty graph to ready queue
 
-This repository does **not** seed work by hand. `Plan/backlog.yaml` is the source of truth. `Tools/beads-sync.py` projects it into beads and never reads back. Creating planned epics or features with `bd create` makes the plan and the graph diverge.
+This repository does **not** seed work by hand. `Plan/backlog.yaml` is the source of truth (format v2: 18 epics, stories under features). `Tools/render-product-map.py` regenerates that file; `Tools/beads-sync.py` projects it into beads and never reads back. Creating planned epics, features, or stories with `bd create` makes the plan and the graph diverge.
 
 `bd init` leaves the graph empty. Until the sync runs, `bd ready` is a truthful empty list, not a missing installation.
 
@@ -46,9 +46,11 @@ Role must be **maintainer** in this repo. `contributor` routes `bd create` to `~
 
 Do not add `repos.additional` unless every listed path is itself a `bd init`'d workspace. An empty `~/.beads-planning/.beads/` directory is enough to take down the ready queue. Remove a bad entry with `bd repo remove <path>`.
 
-The sync writes `Plan/.bead-ids.json`, mapping stable plan keys (`E2.F1.T2`) to hash IDs (`Signal-Plane-7ew.1.2`). Commit that file. Re-running the sync is idempotent: existing keys are left alone, new plan items are created, items marked `status: closed` in the plan are closed.
+The sync writes `Plan/.bead-ids.json`, mapping stable plan keys (`E2.F1.S1.T1`) to hash IDs. Commit that file. Re-running the sync is idempotent: existing keys are left alone, new plan items are created, `status: closed` items are closed, and `status: deferred` items are iced so they do not appear in `bd ready`.
 
-After a successful sync, `bd ready` includes epics and features that have no blockers. For implementation work, filter to tasks:
+The plan is four levels: epic → feature → story → task. Stories are persona plus outcome. Phase 1–2 (E1–E5) is the open frontier; phase 3–4 (E6–E18) is deferred so those leaves do not flood `bd ready`.
+
+After a successful sync, unfiltered `bd ready` includes epics, features, and stories that have no blockers. For implementation work, filter to tasks:
 
 ```
 bd ready --type task --explain
@@ -187,13 +189,13 @@ These are inherited by every command.
 
 ---
 
-## 5. Planning: epics, features, tasks **[verified]**
+## 5. Planning: epics, features, stories, tasks **[verified]**
 
 ### 5.1 Types and priorities
 
-Valid types: `bug`, `feature`, `task`, `epic`, `chore`, `decision`. Aliases: `enhancement` and `feat` map to `feature`; `dec` and `adr` map to `decision`. Custom types require `types.custom` in configuration.
+Valid types: `bug`, `feature`, `task`, `epic`, `chore`, `decision`, `story`, `spike`, `milestone`. Aliases: `enhancement` and `feat` map to `feature`; `dec` and `adr` map to `decision`. Custom types require `types.custom` in configuration.
 
-There is no `story` type. If you want four levels, either configure a custom type or treat `feature` as your story level.
+This plan uses four levels: epic → feature → story → task. `story` is built-in in bd 1.2.1 (persona plus outcome). Do not invent a custom type for it.
 
 Priority is 0 to 4 or P0 to P4, where 0 is highest. Default is 2.
 
@@ -204,7 +206,9 @@ bd statuses                    # list valid statuses and categories
 
 ### 5.2 Creating with specification content
 
-This is where specification driven development actually happens. These flags put the spec on the bead:
+Planned work is created by the sync, not by this command. Use `bd create` for **discovered** work (bugs, follow-ups) and put `--deps discovered-from:<id>` on it.
+
+These flags put the spec on the bead:
 
 ```
 bd create "Authority gate JDBC repository" \
@@ -378,7 +382,7 @@ External dependencies always block, and are evaluated at query time.
 ## 7. The daily loop **[verified]**
 
 ```
-bd ready                                 # unblocked work (epics, features, and tasks)
+bd ready                                 # unblocked work (epics, features, stories, tasks)
 bd ready --type task                     # implementation frontier in this repo
 bd ready --explain                       # and why, including what is blocked
 bd ready --json                          # machine readable
@@ -424,7 +428,7 @@ bd create "Found a bug in the sweeper" \
 
 ```
 bd prime                                 # start of session: workflow context
-bd ready --json                          # what to work on
+bd ready --type task --json              # sitting-sized work to claim
 # ... work ...
 bd dolt push                             # end of session, always
 ```
@@ -720,14 +724,15 @@ bd doctor
 bd dolt remote list
 ```
 
-**Seed the plan from the spec, not by hand.** Edit `Plan/backlog.yaml`. Every item needs `spec`, `design`, and `acceptance` at the level that owns them (epics and features carry the specification; tasks inherit the parent's intent). Then project:
+**Seed the plan from the spec, not by hand.** Edit `Tools/render-product-map.py` (or `Plan/backlog.yaml` directly). Every epic, feature, and story needs `spec`, `design`, and `acceptance`; tasks inherit the parent's intent. Then project:
 
 ```
+python3 Tools/render-product-map.py      # regenerate Plan/backlog.yaml
 python3 Tools/beads-sync.py --dry-run
 python3 Tools/beads-sync.py
 ```
 
-The sync creates decisions, epics, features, and tasks; wires sequential task edges and the `dependencies:` block; attaches ADRs with `--type related`; and closes items already marked `status: closed`. Do not `bd create` planned epics or features. `Plan/.bead-ids.json` is the idempotency map; commit it.
+The sync creates decisions, epics, features, stories, and tasks; wires sequential task edges and the `dependencies:` block; attaches ADRs with `--type related`; closes `status: closed`; and defers `status: deferred` so later phases stay off the ready queue. Do not `bd create` planned epics, features, or stories. `Plan/.bead-ids.json` is the idempotency map; commit it. Do not renumber keys.
 
 **Verify the plan holds together.**
 

@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "Plan" / "backlog.yaml"
 IDMAP = ROOT / "Plan" / ".bead-ids.json"
 
-PRIORITY_DEFAULT = {"epic": "1", "feature": "2", "task": "2", "decision": "2"}
+PRIORITY_DEFAULT = {"epic": "1", "feature": "2", "story": "2", "task": "2", "decision": "2"}
 
 
 class Sync:
@@ -56,9 +56,10 @@ class Sync:
             return self.ids[key]
 
         args = [
+            "--dolt-auto-commit", "batch",
             "create", item["title"],
             "--type", kind,
-            "--priority", str(item.get("priority", PRIORITY_DEFAULT[kind])),
+            "--priority", str(item.get("priority", PRIORITY_DEFAULT.get(kind, "2"))),
             "--silent",
         ]
         if parent:
@@ -86,25 +87,62 @@ class Sync:
         if not blocked or not blocker:
             print(f"  ! skipping dep {blocked_key} <- {blocker_key}: unknown key")
             return
-        args = ["dep", "add", blocked, blocker]
+        args = ["--dolt-auto-commit", "batch", "dep", "add", blocked, blocker]
         if dep_type:
             args += ["--type", dep_type]
         self.bd(args, ok_stderr=("already exists", "duplicate", "already has"))
         self.linked += 1
 
     def close_if_done(self, key: str, item: dict) -> None:
-        if item.get("status") != "closed" or self.dry_run:
+        if item.get("status") != "closed" or self.dry_run or key not in self.ids:
             return
         try:
             self.bd(
-                ["close", self.ids[key], "--reason", "delivered before beads adoption"],
+                ["--dolt-auto-commit", "batch", "close", self.ids[key],
+                 "--reason", "delivered before beads adoption"],
                 ok_stderr=("already closed", "is closed"),
             )
         except RuntimeError as exc:
             if "open child" in str(exc).lower():
-                print(f"  ! not closing {key} ({self.ids[key]}): open children remain")
-                return
+                try:
+                    self.bd(
+                        ["--dolt-auto-commit", "batch", "update", self.ids[key],
+                         "--status", "closed", "--force"],
+                        ok_stderr=("already closed", "is closed"),
+                    )
+                    return
+                except RuntimeError:
+                    print(f"  ! not closing {key} ({self.ids[key]}): open children remain")
+                    return
             raise
+
+    def defer_if_later(self, key: str, item: dict) -> None:
+        if item.get("status") != "deferred" or self.dry_run or key not in self.ids:
+            return
+        self.bd(
+            ["--dolt-auto-commit", "batch", "defer", self.ids[key],
+             "--reason", "later phase; not on the ready queue"],
+            ok_stderr=("already deferred", "is deferred", "not open"),
+        )
+
+    def walk_close_and_defer(self, plan: dict) -> None:
+        for d in plan.get("decisions", []):
+            self.close_if_done(d["key"], d)
+        for epic in plan["epics"]:
+            for feat in epic.get("features", []):
+                for story in feat.get("stories", []):
+                    for task in story.get("tasks", []):
+                        self.close_if_done(task["key"], task)
+                        self.defer_if_later(task["key"], task)
+                    self.close_if_done(story["key"], story)
+                    self.defer_if_later(story["key"], story)
+                for task in feat.get("tasks", []):
+                    self.close_if_done(task["key"], task)
+                    self.defer_if_later(task["key"], task)
+                self.close_if_done(feat["key"], feat)
+                self.defer_if_later(feat["key"], feat)
+            self.close_if_done(epic["key"], epic)
+            self.defer_if_later(epic["key"], epic)
 
     def save(self) -> None:
         if not self.dry_run:
@@ -141,18 +179,24 @@ def main() -> int:
         for feat in epic.get("features", []):
             feat_id = s.create(feat["key"], feat, "feature", parent=epic_id)
 
+            for story in feat.get("stories", []):
+                story_id = s.create(story["key"], story, "story", parent=feat_id)
+                prev_task_key = None
+                for task in story.get("tasks", []):
+                    s.create(task["key"], task, "task", parent=story_id)
+                    if prev_task_key:
+                        s.dep(task["key"], prev_task_key)
+                    prev_task_key = task["key"]
+
+            # v1 leftover: tasks hanging directly under a feature
             prev_task_key = None
             for task in feat.get("tasks", []):
                 s.create(task["key"], task, "task", parent=feat_id)
-                # Tasks within a feature are sequential unless the plan says
-                # otherwise. Parallelism is opt in, because an agent picking two
-                # tasks in the same file at once is the common failure.
                 if prev_task_key:
                     s.dep(task["key"], prev_task_key)
                 prev_task_key = task["key"]
 
             for adr in feat.get("implements", []):
-                # Non blocking: the decision is context, not a gate.
                 s.dep(feat["key"], adr, dep_type="related")
 
     print("\ncross cutting dependencies")
@@ -161,17 +205,15 @@ def main() -> int:
 
     s.save()
 
-    print("\nclosing already delivered items")
-    for d in plan.get("decisions", []):
-        s.close_if_done(d["key"], d)
-    for epic in plan["epics"]:
-        s.close_if_done(epic["key"], epic)
-        for feat in epic.get("features", []):
-            for task in feat.get("tasks", []):
-                s.close_if_done(task["key"], task)
-            s.close_if_done(feat["key"], feat)
+    print("\nclosing already delivered items and deferring later phases")
+    s.walk_close_and_defer(plan)
 
     s.save()
+    if not args.dry_run:
+        try:
+            s.bd(["dolt", "commit", "--message", "beads-sync product map"], ok_stderr=("nothing to commit", "no changes"))
+        except RuntimeError as exc:
+            print(f"  ! dolt commit: {exc}")
     print(f"\ncreated {s.created}, existing {s.skipped}, dependencies {s.linked}")
 
     if args.prune:

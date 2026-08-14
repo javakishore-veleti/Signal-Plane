@@ -4,7 +4,7 @@ Work is tracked in [beads](https://beads.gascity.com), a dependency-aware issue 
 
 ## The spec is the source of truth
 
-`plan/backlog.yaml` defines every epic, feature, and task. It is the file that gets edited. `tools/beads-sync.py` projects it into the graph and never reads back, so the plan cannot silently drift into being a stale summary of the tracker.
+`Plan/backlog.yaml` defines every epic, feature, story, and task. It is the file that gets edited. `Tools/beads-sync.py` projects it into the graph and never reads back, so the plan cannot silently drift into being a stale summary of the tracker.
 
 Every item carries three fields that turn a title into a specification:
 
@@ -20,13 +20,14 @@ The ten ADRs are beads too, created with `--type=decision` (`adr` is an alias). 
 
 ## Levels
 
-Beads ships `bug | feature | task | epic | chore | decision`. There is no `story` type; a fourth level needs `types.custom` configured. The mapping used here:
+Beads ships `epic | feature | story | task | decision` (plus bug, chore, spike). This plan uses four levels:
 
 ```
-epic      E1        a coherent area of the system
-feature   E1.F1     a shippable capability, what most teams call a story
-task      E1.F1.T1  one sitting of work
-decision  ADR-0004  an architecture decision, linked from the features it governs
+epic      E2           a product capability / bounded context
+feature   E2.F1        a shippable capability
+story     E2.F1.S1     one persona, one outcome, testable
+task      E2.F1.S1.T1  one sitting of work
+decision  ADR-0004     an architecture decision, linked from the features it governs
 ```
 
 Hierarchical child IDs (`bd-a3f8e9.1`) come from `--parent`, so the tree is navigable with `bd dep tree`.
@@ -34,8 +35,8 @@ Hierarchical child IDs (`bd-a3f8e9.1`) come from `--parent`, so the tree is navi
 ## Daily loop
 
 ```bash
-bd ready --explain          # what is workable and why
-bd update <id> --claim      # take it
+bd ready --type task --explain   # claimable sitting-sized work
+bd update <id> --claim           # take it
 # ... work ...
 bd close <id> --reason "..."
 bd dolt push                # end of session
@@ -112,10 +113,10 @@ bd ready --type task --explain
 bd dolt push
 ```
 
-The sync closes items already delivered before beads adoption, so the first `bd ready` shows the genuine frontier rather than work that is finished.
+The sync closes items already delivered and defers phase 3–4, so the first `bd ready --type task` shows the genuine frontier.
 
 ## Amending the plan
 
-Edit `plan/backlog.yaml`, then re-run the sync. Existing beads are recognised by their stable plan key in `plan/.bead-ids.json` and left alone; only new items are created.
+Edit `Plan/backlog.yaml` (or `Tools/render-product-map.py` then re-render), then re-run `python3 Tools/beads-sync.py`. Existing beads are recognised by their stable plan key in `Plan/.bead-ids.json` and left alone; only new items are created.
 
 Never renumber a key. Retire an item instead of deleting it, so the mapping stays valid and history stays readable.

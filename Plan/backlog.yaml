@@ -1,19 +1,19 @@
-# Specification driven backlog.
+# Specification driven backlog. Plan format v2.
 #
-# This file is the source of truth for what gets built. tools/beads-sync.py
-# projects it into the beads graph; it never reads back from beads. Change the
-# plan here, re-run the sync, and the graph follows.
+# This file is the source of truth for what gets built. Tools/beads-sync.py
+# projects it into the beads graph; it never reads back from beads.
 #
-# Every item carries the three fields that make a bead a specification rather
-# than a title: spec (the document it implements), design (how), and acceptance
-# (how we know it is done). bd lint fails items missing them.
+# Levels: epic -> feature -> story -> task.
+# story is a built-in beads type (persona + outcome).
+# feature is a shippable capability. task is one sitting of work.
 #
-# Levels: epic -> feature -> task. Beads ships bug|feature|task|epic|chore|decision
-# and has no "story" type; a four level hierarchy needs types.custom configured.
-# Features here are what most teams call stories.
+# Every epic, feature, and story carries spec, design, and acceptance.
+# Phase 1–2 items are the open frontier. Phase 3–4 items are deferred
+# so bd ready stays a real queue.
 #
-# key is stable and is what the sync uses to recognise an item across runs.
-# Do not renumber keys. Retire an item by setting status: retired.
+# key is stable. Do not renumber. Retire with status: retired.
+# v1 keys E2–E7 (control-plane-shaped engineering spine) were closed as
+# superseded by this product map; ADR-* keys are unchanged.
 
 prefix: sp
 
@@ -43,7 +43,7 @@ decisions:
     spec: docs/adr/0007-outbound-only-edge-shipper.md
     status: closed
   - key: ADR-0008
-    title: Federated read path, no cutover
+    title: "Federated read path, no cutover"
     spec: docs/adr/0008-federated-read-path-during-migration.md
     status: closed
   - key: ADR-0009
@@ -51,395 +51,1553 @@ decisions:
     spec: docs/adr/0009-pinned-scoring-model-version-per-tenant.md
     status: closed
   - key: ADR-0010
-    title: Local first development, CDK only for cloud
+    title: "Local first development, CDK only for cloud"
     spec: docs/adr/0010-local-first-development-cdk-for-cloud.md
     status: closed
 
 epics:
 
   - key: E1
-    title: Contracts and taxonomy
+    title: Contracts and vocabulary
     priority: 0
+    phase: 1
     labels: [contracts]
     spec: schemas/signal-envelope.schema.json
-    design: >
-      The four schemas plus taxonomy.yaml are the architecture. Everything
-      downstream is an implementation of them, so this epic gates the rest.
-    acceptance: >
-      make validate passes; every adapter manifest cross checks against the
-      taxonomy; contract tests cover determinism, hash chaining, and fail closed.
+    design: The five contracts plus taxonomy.yaml are the published language. Everything downstream is an implementation of them.
+    acceptance: "make validate passes; every adapter manifest cross-checks the taxonomy; contract tests cover determinism, hash chaining, and fail closed."
     features:
-
       - key: E1.F1
-        title: Envelope schema and shared adapter library
-        status: closed
+        title: Normalized envelope and shared construction library
         implements: [ADR-0002]
         spec: schemas/signal-envelope.schema.json
-        design: >
-          Deterministic v5 signal_id over tenant, adapter, native id. Per subject
-          hash chain. Envelope construction lives in the shared library so adapters
-          cannot drift.
-        acceptance: >
-          Contract tests prove id determinism, chain linkage, per subject chain
-          isolation, and refusal both without authority and after expiry.
-        tasks:
-          - { key: E1.F1.T1, title: Define signal envelope schema, status: closed }
-          - { key: E1.F1.T2, title: Implement AdapterContext build and hashing, status: closed }
-          - { key: E1.F1.T3, title: Contract tests for envelope invariants, status: closed }
-
+        design: "Adapters build records only through AdapterContext so identity, hashing, and authority checks cannot drift."
+        acceptance: No adapter can emit a record without an unexpired decision; signal_id is deterministic; hash chain is per subject.
+        stories:
+          - key: E1.F1.S1
+            title: Integrator emits only the normalized envelope
+            status: closed
+            spec: schemas/signal-envelope.schema.json
+            design: Heterogeneity stops at the adapter. Consumers never see a source-specific shape.
+            acceptance: A directory_watch event validates against signal-envelope.schema.json with no additional properties.
+            tasks:
+              - { key: E1.F1.S1.T1, title: Define signal envelope schema, status: closed }
+              - { key: E1.F1.S1.T2, title: Implement AdapterContext build and hashing, status: closed }
+              - { key: E1.F1.S1.T3, title: Reject additional properties and unknown signal types at validation, status: closed }
+          - key: E1.F1.S2
+            title: Replay of the same source event collapses to one record
+            status: closed
+            spec: schemas/signal-envelope.schema.json
+            design: "signal_id is uuid5 of tenant|adapter|native_id so overlap during migration does not double count."
+            acceptance: Two builds with the same native_id produce the same signal_id.
+            tasks:
+              - { key: E1.F1.S2.T1, title: "Deterministic v5 signal_id over tenant, adapter, native id", status: closed }
+              - { key: E1.F1.S2.T2, title: Contract test for id determinism, status: closed }
+          - key: E1.F1.S3
+            title: Investigator can detect omitted records without trusting the store
+            status: closed
+            spec: schemas/signal-envelope.schema.json
+            design: "Per-subject content hash chain. Integrity is evidential, not decorative."
+            acceptance: Consecutive signals for one subject link; a second subject starts a new chain.
+            tasks:
+              - { key: E1.F1.S3.T1, title: Per subject hash chain in AdapterContext, status: closed }
+              - { key: E1.F1.S3.T2, title: Contract test for chain linkage and per-subject isolation, status: closed }
+          - key: E1.F1.S4
+            title: Capture is refused without an unexpired authority decision
+            spec: schemas/signal-envelope.schema.json
+            design: "Fail closed. Missing or expired authority is a defect, not a configuration choice."
+            acceptance: build() raises PermissionError when authority is absent or expired.
+            tasks:
+              - { key: E1.F1.S4.T1, title: Refuse emit without authority, status: closed }
+              - { key: E1.F1.S4.T2, title: Refuse emit after expiry, status: closed }
+              - { key: E1.F1.S4.T3, title: Treat missing expires_at as expired in is_expired }
       - key: E1.F2
-        title: Taxonomy governance
+        title: Governed vocabulary
         implements: [ADR-0002]
         spec: taxonomy.yaml
-        design: >
-          Additive only within a schema_version. The validator fails any manifest
-          emitting a signal_type the taxonomy does not know.
-        acceptance: >
-          A manifest with an unknown signal type or invalid category fails CI;
-          a taxonomy addition alone does not.
-        tasks:
-          - { key: E1.F2.T1, title: Cross check manifests against taxonomy, status: closed }
-          - key: E1.F2.T2
-            title: Fail validation when PyYAML is absent rather than skipping
-            design: >
-              validate.py currently prints a notice and passes when PyYAML is
-              missing, so the taxonomy check can silently not run.
-            acceptance: Missing PyYAML causes a non zero exit with a clear message.
-          - key: E1.F2.T3
-            title: Schema version bump procedure
-            design: Document what forces a new schema_version and how adapters migrate.
-            acceptance: docs/ describes the procedure; a worked example exists.
+        design: "Additive only within a schema_version. An unmapped event is a decision, not an unclassified record."
+        acceptance: A manifest with an unknown signal_type or invalid category fails CI; a taxonomy addition alone does not.
+        stories:
+          - key: E1.F2.S1
+            title: Release is blocked when an adapter invents a signal type
+            spec: taxonomy.yaml
+            design: Vocabulary governance is mechanical. AR-04 / R1.
+            acceptance: validate.py exits non-zero on an unknown signal_type.
+            tasks:
+              - { key: E1.F2.S1.T1, title: Cross check manifests against taxonomy, status: closed }
+              - { key: E1.F2.S1.T2, title: Fail validation when PyYAML is absent rather than skipping }
+          - key: E1.F2.S2
+            title: Integrator cannot emit an unclassified record
+            spec: taxonomy.yaml
+            design: "FR-1.8. Gap is declared; the event is diverted or rejected, never stored as other."
+            acceptance: Handler that cannot map an event records a declared gap and does not call build().
+            tasks:
+              - { key: E1.F2.S2.T1, title: Unmapped event path in shared library }
+              - { key: E1.F2.S2.T2, title: Contract test that unclassified emit is impossible }
+          - key: E1.F2.S3
+            title: Removing a signal type requires a new schema_version and an ADR
+            spec: taxonomy.yaml
+            design: FR-1.3. Repurposing a key is a breaking change.
+            acceptance: docs/ describes the bump procedure with a worked example.
+            tasks:
+              - { key: E1.F2.S3.T1, title: Schema version bump procedure }
+      - key: E1.F3
+        title: Authority decision contract
+        implements: [ADR-0004]
+        spec: schemas/authority-decision.schema.json
+        design: Bounded permission. Capture mode names the approver. Jurisdiction follows the subject. Unbounded grants are invalid.
+        acceptance: Schema requires expires_at; capture_mode and approver.role enums match persisted policy values.
+        stories:
+          - key: E1.F3.S1
+            title: A decision without expiry cannot be issued
+            spec: schemas/authority-decision.schema.json
+            design: "ADR-0004. expires_at is required, including on denials, so caches always have a bound."
+            acceptance: JSON Schema validation fails when expires_at is absent.
+            tasks:
+              - { key: E1.F3.S1.T1, title: Require expires_at in authority-decision.schema.json, status: closed }
+              - { key: E1.F3.S1.T2, title: Control plane deny path always stamps expires_at }
+          - key: E1.F3.S2
+            title: Persisted capture modes match the contract enums
+            spec: schemas/authority-decision.schema.json
+            design: Uppercase seed values would fail runtime validation and block the gate.
+            acceptance: Seed data and schema both use passive_metadata and friends.
+            tasks:
+              - { key: E1.F3.S2.T1, title: Align SQL seed capture_mode with schema, status: closed }
+          - key: E1.F3.S3
+            title: Persisted approver roles match the contract enums
+            spec: schemas/authority-decision.schema.json
+            design: Approver mapping is the gate. Case mismatch is a silent deny-all or deny-none.
+            acceptance: "Seed approvals use subject, employer, works_council."
+            tasks:
+              - { key: E1.F3.S3.T1, title: Align SQL seed approver with schema, status: closed }
+      - key: E1.F4
+        title: Payload reference contract
+        implements: [ADR-0006]
+        spec: schemas/blob-reference.schema.json
+        design: "Bulk never rides the bus. Write bytes first, publish the reference second."
+        acceptance: blob-reference.schema.json is complete; envelope payload_ref $ref resolves.
+        stories:
+          - key: E1.F4.S1
+            title: "A record carries a reference, never the bytes"
+            spec: schemas/blob-reference.schema.json
+            design: FR-5.2. Retention has one enforcement point.
+            acceptance: Envelope with inline bytes fails schema validation.
+            tasks:
+              - { key: E1.F4.S1.T1, title: "Blob reference schema fields: uri, hash, media_type, bytes, retention, hold, key, estate" }
+              - { key: E1.F4.S1.T2, title: Envelope payload_ref uses the blob schema }
+          - key: E1.F4.S2
+            title: A reference to absent content cannot be published
+            spec: schemas/blob-reference.schema.json
+            design: Orphans are recoverable; dangling refs are not.
+            acceptance: Shared library refuses to attach payload_ref before the write ack.
+            tasks:
+              - { key: E1.F4.S2.T1, title: Adapter blob helper writes then returns the reference }
+              - { key: E1.F4.S2.T2, title: "Test: no payload_ref if write fails" }
+      - key: E1.F5
+        title: Adapter manifest contract
+        implements: [ADR-0003]
+        spec: schemas/adapter-manifest.schema.json
+        design: Coverage is derived from manifests. An inaccurate manifest produces confidently wrong coverage.
+        acceptance: "Manifest schema requires emits, capture_modes, delivery, identifier kinds; CI validates it."
+        stories:
+          - key: E1.F5.S1
+            title: Integrator declares capability before shipping
+            spec: schemas/adapter-manifest.schema.json
+            design: "FR-2.2. Coverage discovery reads this, not tribal knowledge."
+            acceptance: A manifest missing capture_modes or emits fails validate.
+            tasks:
+              - { key: E1.F5.S1.T1, title: Manifest required fields and enums }
+              - { key: E1.F5.S1.T2, title: directory_watch manifest validates }
+          - key: E1.F5.S2
+            title: Identifier kinds on the manifest drive subject resolution
+            spec: schemas/adapter-manifest.schema.json
+            design: The control plane must not guess which identifiers an adapter will send.
+            acceptance: Coverage for a subject includes only adapters whose identifier kinds can bind.
+            tasks:
+              - { key: E1.F5.S2.T1, title: identifier_kinds on manifest schema }
+              - { key: E1.F5.S2.T2, title: Registry rejects a manifest with empty identifier_kinds }
+      - key: E1.F6
+        title: Generated contract models for portals
+        spec: Portals/README.md
+        design: "Types are generated from Contracts/schemas so a contract change is a compile error, not a runtime surprise."
+        acceptance: Fresh clone of admin-portal and client-portal builds without a codegen step; generated output is committed.
+        stories:
+          - key: E1.F6.S1
+            title: Portal compile fails when the envelope schema changes incompatibly
+            spec: Portals/README.md
+            design: Shared library owns generation. Hand-written TS models are prohibited.
+            acceptance: Changing a required envelope field breaks portal CI.
+            tasks:
+              - { key: E1.F6.S1.T1, title: Codegen from JSON Schema into Portals/shared }
+              - { key: E1.F6.S1.T2, title: Commit generated models }
+              - { key: E1.F6.S1.T3, title: CI check that generated output is not stale }
 
   - key: E2
-    title: Control plane
+    title: Collection authority
     priority: 0
-    labels: [control-plane, java]
-    spec: services/control-plane
-    design: >
-      Synchronous and low volume. Subject resolution, authority decisions, session
-      lifecycle, adapter registry. Never on the telemetry path.
-    acceptance: >
-      Authority decisions are issued from persisted policy; a denial always carries
-      a reason; no granted decision lacks an expiry.
+    phase: 2
+    labels: [control-plane, java, governance]
+    spec: schemas/authority-decision.schema.json
+    design: Deny by default. Mode determines the approver. Jurisdiction follows the subject. Every grant is bounded. Every denial is actionable.
+    acceptance: subject-0002 in DE is denied continuous_screen with a reason naming the jurisdiction; subject-0001 in US-NC is granted with expires_at.
     features:
-
       - key: E2.F1
-        title: Authority gate
+        title: Persisted jurisdictional policy
         implements: [ADR-0004]
-        spec: docs/adr/0004-authority-gate-precedes-capture.md
-        design: >
-          Deny by default. Jurisdiction follows the subject, not the tenant.
-          Approver role is derived from capture mode and may be overridden per
-          jurisdiction.
-        acceptance: >
-          subject-0002 in DE is denied CONTINUOUS_SCREEN with a reason naming the
-          jurisdiction; subject-0001 in US-NC is granted with a bounded expiry.
-        tasks:
-          - { key: E2.F1.T1, title: AuthorityGate evaluation logic, status: closed }
-          - key: E2.F1.T2
-            title: JDBC PolicyRepository implementation
-            priority: 0
-            design: >
-              Back the interface with the tables in tools/schema.sql. Tenant scoped
-              queries only; a query without a tenant predicate must not compile.
-            acceptance: >
-              Integration test seeds both demo subjects and asserts grant and denial
-              paths against a real database.
-          - key: E2.F1.T3
-            title: Decision cache invalidation on policy change
-            design: >
-              Adapters hold decisions for their bounded lifetime. A revocation must
-              take effect within the decision lifetime, which bounds exposure.
-            acceptance: Revoking approval stops capture within the configured lifetime.
-          - key: E2.F1.T4
-            title: Authority decision audit trail
-            design: Every decision, granted or denied, is persisted with its inputs.
-            acceptance: A decision id can be resolved to the policy version and approval that produced it.
-
+        spec: DevOps/Local/Postgres/init/01-schema.sql
+        design: "Policy lives in the store, not in code. JDBC repository is tenant-scoped; a query without tenant does not compile."
+        acceptance: Integration test seeds both demo subjects and asserts grant and denial against a real database.
+        stories:
+          - key: E2.F1.S1
+            title: "Administrator's grant is evaluated against stored policy, not a stub"
+            spec: docs/PRD.md
+            design: "UC3 / FR-4.1. E2.F1.T2 of the old plan: JDBC PolicyRepository."
+            acceptance: "AuthorityGate.evaluate reads jurisdiction_policy, subject, and approval tables."
+            tasks:
+              - { key: E2.F1.S1.T1, title: JDBC PolicyRepository implementation }
+              - { key: E2.F1.S1.T2, title: Tenant predicate required on every query }
+              - { key: E2.F1.S1.T3, title: Integration test against local Postgres seed }
+          - key: E2.F1.S2
+            title: Policy version on the decision is the version that was applied
+            spec: schemas/authority-decision.schema.json
+            design: "FR-4.2, NFR-4.4. Retroactive policy change does not rewrite history."
+            acceptance: Granted decision.policy_version equals jurisdiction_policy.policy_version at evaluation time.
+            tasks:
+              - { key: E2.F1.S2.T1, title: Stamp policy_version from the row used }
+              - { key: E2.F1.S2.T2, title: Changing policy does not alter previously issued decision rows }
       - key: E2.F2
-        title: Subject resolution
-        spec: schemas/signal-envelope.schema.json
-        design: >
-          Map raw identifiers (upn, email, device id, account sid) to one canonical
-          subject with a confidence score. Ambiguity resolves to no subject rather
-          than a guess.
-        acceptance: >
-          Conflicting identifier claims produce an unresolved result and a diagnostic,
-          never a silent merge of two people.
-        tasks:
-          - { key: E2.F2.T1, title: Identifier to subject mapping and confidence }
-          - { key: E2.F2.T2, title: Ambiguity handling and diagnostics }
-
+        title: Capture mode and subject jurisdiction
+        implements: [ADR-0004]
+        spec: schemas/authority-decision.schema.json
+        design: Approver is a function of mode and optional jurisdiction override. Tenant HQ is irrelevant.
+        acceptance: DE subject cannot use a US-NC employer grant; works_council override is honoured.
+        stories:
+          - key: E2.F2.S1
+            title: Investigator in DE is not captured at continuous_screen without works-council approval
+            spec: docs/PRD.md
+            design: UC3. Governing rule follows the subject.
+            acceptance: "evaluate(tenant-demo, subject-0002, continuous_screen) returns granted=false and names DE."
+            tasks:
+              - { key: E2.F2.S1.T1, title: "Load subject.jurisdiction, not tenant country" }
+              - { key: E2.F2.S1.T2, title: Denial reason includes jurisdiction and mode }
+          - key: E2.F2.S2
+            title: Works-council override replaces the mode default approver
+            spec: schemas/authority-decision.schema.json
+            design: DE permitted_modes is passive_metadata only; approver_override is works_council.
+            acceptance: Approval from employer is ignored when override is works_council.
+            tasks:
+              - { key: E2.F2.S2.T1, title: JurisdictionPolicy.approverFor uses override when set }
+              - { key: E2.F2.S2.T2, title: "Test: employer approval does not satisfy DE override" }
       - key: E2.F3
-        title: Session lifecycle and coverage discovery
-        implements: [ADR-0005]
-        spec: docs/architecture.md
-        design: >
-          Coverage discovery answers which adapters can observe a subject, from the
-          registered manifests. Sessions terminate on a rule: schedule boundary,
-          decision expiry, retention clock, or case closure.
-        acceptance: >
-          A session outside its schedule window is closed automatically; explicit
-          termination is available but is not the normal path.
-        tasks:
-          - { key: E2.F3.T1, title: Adapter registry and manifest registration }
-          - { key: E2.F3.T2, title: Coverage discovery endpoint }
-          - { key: E2.F3.T3, title: Rule driven session termination }
+        title: Bounded grant
+        implements: [ADR-0004]
+        spec: schemas/authority-decision.schema.json
+        design: Every granted decision has expires_at. max_lifetime_seconds on the policy is the bound.
+        acceptance: No granted decision lacks expiry. Cache lifetime cannot exceed the decision.
+        stories:
+          - key: E2.F3.S1
+            title: Administrator receives a time-bounded grant for a permitted mode
+            spec: docs/PRD.md
+            design: FR-4.5. US-NC subject-0001 passive_metadata with employer approval.
+            acceptance: granted=true and expires_at = evaluated_at + max_lifetime_seconds.
+            tasks:
+              - { key: E2.F3.S1.T1, title: Compute expires_at from policy max_lifetime_seconds }
+              - { key: E2.F3.S1.T2, title: "Reject granted && expires_at == null in AuthorityDecision constructor" }
+          - key: E2.F3.S2
+            title: Adapter stops emitting when the cached grant expires
+            spec: Middleware/adapters/common/authority.py
+            design: "NFR-1.1 converse: in-flight collection continues only while the decision is unexpired."
+            acceptance: "After expiry, the next build() raises and no envelope is produced."
+            tasks:
+              - { key: E2.F3.S2.T1, title: Adapter session cache stores expires_at }
+              - { key: E2.F3.S2.T2, title: is_expired fail-closed when expires_at missing }
+      - key: E2.F4
+        title: Actionable denial
+        implements: [ADR-0004]
+        spec: schemas/authority-decision.schema.json
+        design: A denial nobody can explain is indistinguishable from a bug and gets worked around.
+        acceptance: Every denial has denial_reason an administrator can act on; HTTP 200 with granted=false.
+        stories:
+          - key: E2.F4.S1
+            title: Administrator can act on a denial without reading source code
+            spec: docs/PRD.md
+            design: "FR-4.6. Reasons name missing approval, missing jurisdiction, or mode not permitted."
+            acceptance: Each deny branch in AuthorityGate has a distinct reason string covering the cause.
+            tasks:
+              - { key: E2.F4.S1.T1, title: Denial for unresolved jurisdiction }
+              - { key: E2.F4.S1.T2, title: Denial for no policy on file }
+              - { key: E2.F4.S1.T3, title: Denial for no approval on record }
+          - key: E2.F4.S2
+            title: Caller does not retry a denial as if it were a 5xx
+            spec: Middleware/control-plane/src/main/java/io/signalplane/controlplane/authority/AuthorityController.java
+            design: A denial is a well-formed answer.
+            acceptance: POST /v1/authority/decisions returns 200 and granted=false.
+            tasks:
+              - { key: E2.F4.S2.T1, title: Controller returns 200 for denials }
+              - { key: E2.F4.S2.T2, title: Adapter raises AuthorityDenied and does not retry }
+      - key: E2.F5
+        title: Decision constraints
+        implements: [ADR-0004]
+        spec: schemas/authority-decision.schema.json
+        design: "Schedule windows, excluded categories, excluded destinations, redaction profile travel with the grant."
+        acceptance: A grant outside a window is unusable; excluded destinations are never captured.
+        stories:
+          - key: E2.F5.S1
+            title: Collection is closed outside the permitted schedule window
+            spec: docs/PRD.md
+            design: "FR-4.7, UC4. Session termination is rule driven."
+            acceptance: A decision with weekday windows refuses emit on Sunday.
+            tasks:
+              - { key: E2.F5.S1.T1, title: Stamp schedule_windows from policy onto the decision }
+              - { key: E2.F5.S1.T2, title: Adapter refuses emit outside the window }
+          - key: E2.F5.S2
+            title: Banking and health destinations are never captured regardless of tenant config
+            spec: schemas/authority-decision.schema.json
+            design: FR-4.12. Jurisdictional never-collect list.
+            acceptance: "Payload or metadata destined to *.bank.example is dropped even with a grant."
+            tasks:
+              - { key: E2.F5.S2.T1, title: Stamp excluded_destinations from jurisdiction_policy }
+              - { key: E2.F5.S2.T2, title: Adapter filters excluded destinations before build }
+      - key: E2.F6
+        title: Revocation within the decision lifetime
+        implements: [ADR-0004]
+        spec: schemas/authority-decision.schema.json
+        design: Withdrawal takes effect within the cached TTL. Shortening TTL increases control-plane load. This is a designed bound.
+        acceptance: Revoking approval stops capture within max_lifetime_seconds.
+        stories:
+          - key: E2.F6.S1
+            title: Works council withdraws approval and capture stops before the next TTL
+            spec: docs/PRD.md
+            design: FR-4.10. Adapters do not refresh a revoked decision.
+            acceptance: "After approval row is deleted, a new evaluate returns denied; in-flight session dies at expiry."
+            tasks:
+              - { key: E2.F6.S1.T1, title: Delete approval invalidates new evaluates immediately }
+              - { key: E2.F6.S1.T2, title: Document revocation latency as the decision lifetime }
+      - key: E2.F7
+        title: Decision audit trail
+        implements: [ADR-0004]
+        spec: schemas/authority-decision.schema.json
+        design: "Every decision, granted or denied, is persisted with its inputs."
+        acceptance: "A decision_id resolves to policy version, approver, inputs, and outcome."
+        stories:
+          - key: E2.F7.S1
+            title: Compliance owner traces a stored record to the decision that permitted it
+            spec: docs/PRD.md
+            design: "UC6, FR-4.8, FR-4.11."
+            acceptance: "GET /v1/authority/decisions/{id} returns the full decision including inputs."
+            tasks:
+              - { key: E2.F7.S1.T1, title: Persist every evaluate result }
+              - { key: E2.F7.S1.T2, title: Lookup API by decision_id }
 
   - key: E3
-    title: Ingest path
-    priority: 1
-    labels: [ingest, python]
-    spec: adapters/python
-    design: One adapter per source, emitting to the bus, blobs by reference.
-    acceptance: Two adapters run concurrently without one degrading the other.
+    title: Subject identity
+    priority: 0
+    phase: 2
+    labels: [control-plane, java, governance]
+    spec: schemas/signal-envelope.schema.json
+    design: Raw identifiers resolve to a canonical subject with confidence. Ambiguity resolves to no subject. Correction is auditable and retroactive. Erasure spans estates.
+    acceptance: "Conflicting claims produce unresolved + diagnostic, never a silent merge. SAR retrieve and erase work across managed and self-hosted estates subject to hold."
     features:
-
       - key: E3.F1
-        title: Reference adapter and emission
-        status: closed
-        implements: [ADR-0003]
-        spec: adapters/python/sources/directory_watch
-        design: Directory watch adapter demonstrating the full shape end to end.
-        acceptance: Runs with or without a broker present; output validates against the schema.
-        tasks:
-          - { key: E3.F1.T1, title: Directory watch adapter, status: closed }
-          - { key: E3.F1.T2, title: Kafka emission with stdout fallback, status: closed }
-
+        title: Identifier to canonical subject
+        spec: schemas/signal-envelope.schema.json
+        design: "UPN, email, device id, account SID, employee number are claims, not the subject."
+        acceptance: "A known mapping returns subject_id and confidence; unknown returns unresolved, not a new person guessed from email."
+        stories:
+          - key: E3.F1.S1
+            title: "Investigator's query by email finds the same subject as a query by device id"
+            spec: docs/PRD.md
+            design: "UC2, FR-3.1."
+            acceptance: Two identifier kinds for subject-0001 resolve to the same subject_id.
+            tasks:
+              - { key: E3.F1.S1.T1, title: subject_identifier table lookup }
+              - { key: E3.F1.S1.T2, title: Confidence scored mapping API }
+          - key: E3.F1.S2
+            title: Ambiguous claims do not invent a person
+            spec: docs/PRD.md
+            design: "FR-3.2, AR-08. Silent merge is the identity failure that matters."
+            acceptance: Email mapped to two subject_ids returns unresolved and a diagnostic event.
+            tasks:
+              - { key: E3.F1.S2.T1, title: Conflict detection across identifier rows }
+              - { key: E3.F1.S2.T2, title: "Diagnostic on unresolved, no subject_id issued" }
       - key: E3.F2
-        title: Blob write ordering
-        implements: [ADR-0006]
-        spec: docs/adr/0006-blobs-by-reference-never-on-the-bus.md
-        design: >
-          Blob durable first, reference published second. Orphaned blobs are swept;
-          dangling references are not acceptable.
-        acceptance: >
-          A fault injected between write and publish leaves an orphan, never a
-          dangling reference. The sweeper reclaims it.
-        tasks:
-          - { key: E3.F2.T1, title: Enforce write then publish ordering }
-          - { key: E3.F2.T2, title: Orphan sweeper }
-          - { key: E3.F2.T3, title: Object lock on legal hold }
-
+        title: Auditable correction
+        spec: docs/PRD.md
+        design: Mappings are correctable. Correction reapplies across stored records.
+        acceptance: An administrator can split a merged identity; subsequent reads use the corrected subject.
+        stories:
+          - key: E3.F2.S1
+            title: Administrator splits a wrong merge and history follows
+            spec: docs/PRD.md
+            design: FR-3.3.
+            acceptance: "After correction, records previously under subject A for identifier X appear under subject B."
+            tasks:
+              - { key: E3.F2.S1.T1, title: Correction ledger with actor and reason }
+              - { key: E3.F2.S1.T2, title: Reindex affected signal_id subject pointers }
       - key: E3.F3
-        title: Estate ingest endpoint
-        implements: [ADR-0007]
-        spec: edge-shipper
-        design: >
-          Receives batches from the edge shipper. Idempotent by signal_id, so a
-          replayed batch after a checkpoint failure is absorbed rather than doubled.
-        acceptance: Submitting the same batch twice produces the same stored state.
-        tasks:
-          - { key: E3.F3.T1, title: estate_ingest adapter handler }
-          - { key: E3.F3.T2, title: Batch idempotency by signal_id }
-          - { key: E3.F3.T3, title: Bearer authentication and per tenant rate limit }
-
-      - key: E3.F4
-        title: Failure isolation
-        implements: [ADR-0003]
-        spec: infra/cdk/lib/ingest-stack.ts
-        design: Per adapter DLQ routing and per source concurrency limits.
-        acceptance: A saturated adapter does not raise error rates on any other adapter.
-        tasks:
-          - { key: E3.F4.T1, title: Per adapter DLQ and redrive }
-          - { key: E3.F4.T2, title: Per source concurrency limits }
+        title: Subject access and erasure
+        spec: docs/PRD.md
+        design: "Retrievable and deletable by canonical subject across sources and estates, hold taking precedence."
+        acceptance: SAR export contains all estates; erase is refused while held and completes when hold lifts.
+        stories:
+          - key: E3.F3.S1
+            title: Subject receives everything the platform holds about them
+            spec: docs/PRD.md
+            design: "NFR-4.2, FR-3.4."
+            acceptance: Export job returns index rows and payload refs for one subject_id from every estate.
+            tasks:
+              - { key: E3.F3.S1.T1, title: SAR export job across federated read }
+              - { key: E3.F3.S1.T2, title: Include authority provenance in the export }
+          - key: E3.F3.S2
+            title: Subject erasure is refused while a legal hold applies
+            spec: docs/PRD.md
+            design: Hold is storage-layer enforcement.
+            acceptance: "DELETE subject is 409 while hold is on; after hold release, index and blobs are gone."
+            tasks:
+              - { key: E3.F3.S2.T1, title: Hold check before erase }
+              - { key: E3.F3.S2.T2, title: "Erase across index, blobs, and identifier maps" }
 
   - key: E4
-    title: Read path
-    priority: 1
-    labels: [read-path, go]
-    spec: services/query-broker
-    design: Federated read across estates, merged on signal_id, partial results reported.
-    acceptance: A failing estate degrades the response honestly instead of hiding data.
+    title: Sessions and coverage
+    priority: 0
+    phase: 2
+    labels: [control-plane, java]
+    spec: docs/architecture.md
+    design: "Coverage is derived from registered manifests. Sessions terminate on a rule: schedule, expiry, retention, or case closure. Explicit close is the exception."
+    acceptance: "Coverage for a subject lists adapters, fidelity, and modes. A session outside its window is closed without an operator."
     features:
-
       - key: E4.F1
-        title: Query broker federation
-        status: closed
-        implements: [ADR-0008]
-        spec: services/query-broker/main.go
-        design: Concurrent fan out with a deadline; merge on signal_id; managed plane wins ties.
-        acceptance: Duplicate merge and partial result behaviour are covered by tests.
-        tasks:
-          - { key: E4.F1.T1, title: Broker fan out and merge, status: closed }
-          - { key: E4.F1.T2, title: Partial result reporting, status: closed }
-
+        title: Adapter registry
+        implements: [ADR-0003]
+        spec: schemas/adapter-manifest.schema.json
+        design: Registration is how coverage becomes a derived answer.
+        acceptance: Registered manifests are queryable by adapter_id and version; seed.py is idempotent.
+        stories:
+          - key: E4.F1.S1
+            title: Integrator registers a manifest and it becomes visible to coverage
+            spec: docs/PRD.md
+            design: FR-2.3.
+            acceptance: POST /v1/adapters then GET coverage includes the new adapter.
+            tasks:
+              - { key: E4.F1.S1.T1, title: Adapter registration API and store }
+              - { key: E4.F1.S1.T2, title: Idempotent upsert on adapter_id+version }
       - key: E4.F2
-        title: Index backed estate
-        implements: [ADR-0008]
-        spec: infra/cdk/lib/core-stack.ts
-        design: >
-          Replace StubEstate with an implementation over the signal index,
-          partitioned by tenant and subject so a cross tenant read cannot be
-          expressed.
-        acceptance: >
-          A query without tenant scope fails at the type level, not at runtime.
-          Broker tests pass unchanged against the real implementation.
-        tasks:
-          - { key: E4.F2.T1, title: Signal index writer from the bus }
-          - { key: E4.F2.T2, title: Index backed Estate implementation }
-          - { key: E4.F2.T3, title: Tenant scoping enforced structurally }
-
+        title: Coverage discovery
+        spec: docs/PRD.md
+        design: "Which sources can observe this subject, at what fidelity, under which modes \u2014 from manifests, not tribal knowledge."
+        acceptance: "Given an identifier, coverage lists adapters whose identifier_kinds and capture_modes apply."
+        stories:
+          - key: E4.F2.S1
+            title: Administrator sees which sources can observe a subject before opening a session
+            spec: docs/PRD.md
+            design: UC2.
+            acceptance: "GET /v1/subjects/{id}/coverage names adapters, fidelity, and modes; ambiguity returns 409 with diagnostic."
+            tasks:
+              - { key: E4.F2.S1.T1, title: Coverage endpoint from registry + identity }
+              - { key: E4.F2.S1.T2, title: Ambiguous identifier does not guess coverage }
       - key: E4.F3
-        title: Blob resolution across estates
-        implements: [ADR-0006, ADR-0008]
-        spec: schemas/blob-reference.schema.json
-        design: >
-          Bytes may remain in a self hosted estate during migration. The broker
-          mints short lived references rather than proxying the bytes.
-        acceptance: A reference resolvable_from self_hosted returns a time bounded handle.
-        tasks:
-          - { key: E4.F3.T1, title: Signed handle broker for estate resident blobs }
+        title: Rule-driven session lifecycle
+        implements: [ADR-0005]
+        spec: docs/PRD.md
+        design: "UC4. Sessions die on schedule boundary, decision expiry, retention clock, or case closure."
+        acceptance: A session past expiry is closed; explicit termination exists and is logged as exceptional.
+        stories:
+          - key: E4.F3.S1
+            title: Collection stops at the schedule window without an operator
+            spec: docs/PRD.md
+            design: "FR-4.7, UC4."
+            acceptance: Clock past window.end closes the session and adapters fail closed.
+            tasks:
+              - { key: E4.F3.S1.T1, title: Session record with window and decision_id }
+              - { key: E4.F3.S1.T2, title: Terminator loop on schedule and expiry }
+          - key: E4.F3.S2
+            title: Administrator can explicitly close a session
+            spec: docs/PRD.md
+            design: "Exception path, auditable."
+            acceptance: POST close records actor and reason; subsequent emit is refused.
+            tasks:
+              - { key: E4.F3.S2.T1, title: Explicit close API }
+              - { key: E4.F3.S2.T2, title: Audit actor on explicit close }
+          - key: E4.F3.S3
+            title: Case closure terminates every session on that case
+            spec: docs/PRD.md
+            design: UC4 case closure rule.
+            acceptance: Closing a case closes child sessions within the terminator interval.
+            tasks:
+              - { key: E4.F3.S3.T1, title: Session to case foreign key }
+              - { key: E4.F3.S3.T2, title: Cascade close on case closure }
 
   - key: E5
-    title: Estate migration tooling
-    priority: 1
-    labels: [migration]
-    spec: docs/architecture.md
-    design: >
-      The measure is cost per tenant migrated and rollback rate. If a migration
-      needs an engineer on a call it reaches only the loudest customers.
-      The tooling is the product.
-    acceptance: >
-      A tenant can be assessed, cut over, and rolled back without a bespoke runbook.
+    title: Adapter paved road
+    priority: 0
+    phase: 2
+    labels: [adapters, python]
+    spec: docs/adr/0003-adapter-per-source-not-shared-ingest.md
+    design: "The Nth source is a mapping exercise. The paved road is map, declare, resolve identity, build via the shared library, prove fail closed, register."
+    acceptance: "Adding an adapter changes no existing adapter, consumer, or shared runtime. Adapter change ratio is zero."
     features:
-
       - key: E5.F1
-        title: Edge shipper
-        implements: [ADR-0007]
-        spec: edge-shipper
-        design: Outbound only, durable checkpoint written atomically after acknowledgement.
-        acceptance: A restart resumes from the checkpoint; replay is absorbed, skipping is not possible.
-        tasks:
-          - { key: E5.F1.T1, title: Outbound shipper with atomic checkpoint, status: closed }
-          - { key: E5.F1.T2, title: Self reported health over the outbound channel }
-
+        title: Shared library is the only emit path
+        implements: [ADR-0002, ADR-0003]
+        spec: Middleware/adapters/common/envelope.py
+        design: "Record construction, identity, integrity, authority live here. Adapter N+1 cannot drift."
+        acceptance: No public constructor for envelopes outside AdapterContext.build.
+        stories:
+          - key: E5.F1.S1
+            title: Integrator cannot ship an adapter that bypasses authority
+            spec: docs/PRD.md
+            design: AR-01. No override path.
+            acceptance: Grep/CI fails if an adapter imports json and writes an envelope by hand.
+            tasks:
+              - { key: E5.F1.S1.T1, title: "Lint: adapters must call AdapterContext.build" }
+              - { key: E5.F1.S1.T2, title: CI grep for hand-rolled schema_version keys }
       - key: E5.F2
-        title: Rule and threshold compatibility report
-        priority: 0
-        implements: [ADR-0009]
-        spec: docs/adr/0009-pinned-scoring-model-version-per-tenant.md
-        design: >
-          Before cutover, classify every tenant authored rule as identical,
-          changed, or dependent on a retired signal type. This is what converts
-          migration from a leap of faith into a reviewable decision.
-        acceptance: >
-          Report names each rule and its classification; a tenant with any changed
-          rule cannot be cut over without explicit acknowledgement.
-        tasks:
-          - { key: E5.F2.T1, title: Static analysis of tenant rules against the taxonomy }
-          - { key: E5.F2.T2, title: Threshold drift estimate under the pinned model }
-          - { key: E5.F2.T3, title: Report generation and cutover gate }
-
+        title: Paved-road formula
+        implements: [ADR-0003]
+        spec: .beads/formulas
+        design: "add-adapter formula: map vocabulary, declare capability, identity, implement, fail-closed test, register, review."
+        acceptance: Pouring add-adapter for a named source produces the molecule; departing from it requires ARB.
+        stories:
+          - key: E5.F2.S1
+            title: Integrator adds a source without a bespoke checklist
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: §13.3. Conformant path is the fastest path.
+            acceptance: bd mol pour add-adapter --var adapter_id=... creates the task graph.
+            tasks:
+              - { key: E5.F2.S1.T1, title: add-adapter formula covers the paved sequence }
+              - { key: E5.F2.S1.T2, title: Worked example for a second source }
       - key: E5.F3
-        title: Backfill and retention decision
-        implements: [ADR-0008]
-        spec: docs/architecture.md
-        design: >
-          Index and metadata migrate first; bytes may age out under retention
-          instead of moving. For most tenants the retention window is shorter than
-          the migration programme.
-        acceptance: >
-          Per tenant, the tool recommends backfill or age out with the cost of each.
-        tasks:
-          - { key: E5.F3.T1, title: Metadata and index backfill job }
-          - { key: E5.F3.T2, title: Backfill versus age out cost model }
-          - { key: E5.F3.T3, title: Legal hold carries across the boundary }
-
+        title: Isolation and failure channel
+        implements: [ADR-0003]
+        spec: DevOps/Cloud/cdk/lib/ingest-stack.ts
+        design: "Saturation in one adapter must not move another adapter's error rate. Each has a DLQ and redrive."
+        acceptance: Load on adapter A does not raise errors on adapter B. Redrive is operator initiated.
+        stories:
+          - key: E5.F3.S1
+            title: A saturated source does not degrade any other source
+            spec: docs/PRD.md
+            design: "FR-2.4, NFR-1.2, NFR-2.3."
+            acceptance: "Chaos test: throttle A, B's error rate and latency stay within baseline."
+            tasks:
+              - { key: E5.F3.S1.T1, title: Per source concurrency limits }
+              - { key: E5.F3.S1.T2, title: Cross-adapter interference metric }
+          - key: E5.F3.S2
+            title: Operator redrives records that could not be processed
+            spec: docs/PRD.md
+            design: FR-2.5. Diverted volume is a quality signal.
+            acceptance: DLQ for adapter A is isolated; redrive republishes valid records only.
+            tasks:
+              - { key: E5.F3.S2.T1, title: Per adapter DLQ }
+              - { key: E5.F3.S2.T2, title: Redrive API scoped to one adapter }
       - key: E5.F4
-        title: Cutover and rollback
-        implements: [ADR-0008]
-        spec: docs/deployment.md
-        design: Each of the four migration steps is independently reversible.
-        acceptance: A cutover can be reversed within the rollback window with no data loss.
-        tasks:
-          - { key: E5.F4.T1, title: Per tenant cutover state machine }
-          - { key: E5.F4.T2, title: Rollback within window }
-          - { key: E5.F4.T3, title: Cost per tenant and rollback rate metrics }
+        title: Absence detection
+        spec: docs/TARGET-STATE-ARCHITECTURE.md
+        design: A source that stops emitting looks like a subject who did nothing. AR-11.
+        acceptance: Alert when volume is below the declared minimum interval multiple.
+        stories:
+          - key: E5.F4.S1
+            title: Reliability engineer is told when a source goes silent
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: NFR observability. Silent failures rate above loud ones.
+            acceptance: No events from directory_watch for 3× min_interval pages an owner.
+            tasks:
+              - { key: E5.F4.S1.T1, title: Per-adapter expected volume baseline }
+              - { key: E5.F4.S1.T2, title: Absence alert from min_interval }
 
   - key: E6
-    title: Console
-    priority: 2
-    labels: [ui, angular]
-    spec: ui/console
-    design: One UI across both estates during migration.
-    acceptance: Partial results are visible; scope is never merely cosmetic.
+    title: Source adapters
+    priority: 1
+    phase: 3
+    status: deferred
+    labels: [adapters, python]
+    spec: Middleware/adapters
+    design: "One adapter per source, independently deployed. The estate is a source, not a peer. directory_watch is the reference shape."
+    acceptance: Two adapters run concurrently without cross interference. Estate ingest is just another adapter.
     features:
-
       - key: E6.F1
-        title: Console scaffold
-        spec: ui/console/README.md
-        design: Angular with a dev proxy to the broker and control plane.
-        acceptance: ng serve reaches both services without CORS workarounds.
-        tasks:
-          - { key: E6.F1.T1, title: Angular scaffold and proxy config }
-
+        title: Reference directory watch adapter
+        status: deferred
+        implements: [ADR-0003]
+        spec: Middleware/adapters/sources/directory_watch
+        design: "Demonstrates the full shape: manifest, authority, envelope, optional blob, emit."
+        acceptance: Runs with or without a broker; output validates against the schema.
+        stories:
+          - key: E6.F1.S1
+            title: Integrator can exercise an adapter with no infrastructure
+            status: closed
+            spec: Docs/local-development.md
+            design: Stdout fallback when Kafka is absent.
+            acceptance: handler.py emits valid envelopes to stdout in local mode.
+            tasks:
+              - { key: E6.F1.S1.T1, title: Directory watch adapter, status: closed }
+              - { key: E6.F1.S1.T2, title: Kafka emission with stdout fallback, status: closed }
       - key: E6.F2
-        title: Honest partial results
-        implements: [ADR-0008]
-        spec: ui/console/README.md
-        design: >
-          Render a banner naming the unavailable estate. A console that silently
-          returns half the data during an investigation is worse than one that errors.
-        acceptance: With one estate down, the UI names it and the result count is qualified.
-        tasks:
-          - { key: E6.F2.T1, title: Estate status banner }
-          - { key: E6.F2.T2, title: Qualify counts when results are partial }
-
+        title: Estate ingest adapter
+        status: deferred
+        implements: [ADR-0007]
+        spec: Middleware/adapters
+        design: Self-hosted estate integrates through the same contract. Batches are idempotent on signal_id.
+        acceptance: "Submitting the same batch twice stores one set of records. Auth is bearer, rate-limited per tenant."
+        stories:
+          - key: E6.F2.S1
+            title: Edge shipper batch is absorbed on replay
+            status: deferred
+            spec: docs/PRD.md
+            design: "FR-8.1, FR-8.4."
+            acceptance: Two POSTs of the same signal_ids do not duplicate the index.
+            tasks:
+              - { key: E6.F2.S1.T1, title: estate_ingest handler, status: deferred }
+              - { key: E6.F2.S1.T2, title: Idempotency by signal_id, status: deferred }
+          - key: E6.F2.S2
+            title: Customer security function sees no inbound listener on the estate
+            status: deferred
+            spec: docs/PRD.md
+            design: FR-8.2. The ingest endpoint lives on the managed plane.
+            acceptance: Estate opens outbound only; managed plane authenticates the tenant.
+            tasks:
+              - { key: E6.F2.S2.T1, title: Bearer authentication, status: deferred }
+              - { key: E6.F2.S2.T2, title: Per tenant rate limit, status: deferred }
       - key: E6.F3
-        title: Scoped views
-        spec: docs/architecture.md
-        design: Group and user filters are convenience; scope is enforced server side.
-        acceptance: The UI never offers a scope the caller does not hold.
-        tasks:
-          - { key: E6.F3.T1, title: Scope aware filters }
-          - { key: E6.F3.T2, title: Signal timeline with authority provenance }
+        title: Nth source on the paved road
+        status: deferred
+        spec: docs/PRD.md
+        design: "G1. Each new source is a poured formula, not a new architecture."
+        acceptance: Adapter change ratio remains zero when the third source ships.
+        stories:
+          - key: E6.F3.S1
+            title: Platform integrator ships a third source without touching consumers
+            status: deferred
+            spec: docs/PRD.md
+            design: "FR-2.6, NFR-6.1."
+            acceptance: PR for source C changes only adapters/sources/C and optionally taxonomy.yaml.
+            tasks:
+              - { key: E6.F3.S1.T1, title: Paved-road checklist as CI, status: deferred }
+              - { key: E6.F3.S1.T2, title: Measure adapter change ratio in CI, status: deferred }
 
   - key: E7
-    title: Cloud deployment
-    priority: 2
-    labels: [infra, cdk]
-    spec: infra/cdk
-    design: Small separable stacks, manual dispatch only, destroy as a first class operation.
-    acceptance: A stage can be brought up, smoke tested, and destroyed from the workflow alone.
+    title: Transport and quality
+    priority: 1
+    phase: 3
+    status: deferred
+    labels: [ingest]
+    spec: Docs/architecture.md
+    design: "Records on an event stream partitioned so subject order is preserved. Invalid records divert, never silently drop or accept."
+    acceptance: "Topic per category; partition key tenant|subject; diverted volume by adapter is a monitored quality signal."
     features:
-
       - key: E7.F1
-        title: Stack verification
-        implements: [ADR-0005]
-        spec: docs/deployment.md
-        design: Core, Ingest, and ControlPlane deploy and destroy independently.
-        acceptance: Destroying ControlPlane loses no data; Ingest redeploys without touching Core.
-        tasks:
-          - { key: E7.F1.T1, title: First deploy of the dev stage }
-          - { key: E7.F1.T2, title: OIDC deploy role and least privilege policy }
-          - { key: E7.F1.T3, title: Independent destroy verified per stack }
-
+        title: Ordered record transport
+        status: deferred
+        implements: [ADR-0002]
+        spec: docs/PRD.md
+        design: FR-5.1. Category topics so consumers subscribe to what concerns them.
+        acceptance: Two records for one subject keep order; different subjects may interleave.
+        stories:
+          - key: E7.F1.S1
+            title: Investigator sees file_action events in occurrence order for one subject
+            status: deferred
+            spec: docs/PRD.md
+            design: "Partitioning is a contract, not a tuning knob."
+            acceptance: Produce two envelopes for subject-0001; consume in the same order.
+            tasks:
+              - { key: E7.F1.S1.T1, title: "Partition key tenant|subject_id", status: deferred }
+              - { key: E7.F1.S1.T2, title: Category topic mapping, status: deferred }
       - key: E7.F2
-        title: Cloud smoke path
-        implements: [ADR-0010]
-        spec: docs/local-development.md
-        design: >
-          Local green does not guarantee cloud green. The divergences that bite are
-          IAM, MSK auth, partition behaviour, object lock, and cold starts.
-        acceptance: The smoke path exercises all five and runs before any release.
-        tasks:
-          - { key: E7.F2.T1, title: Smoke test covering the known divergences }
-          - { key: E7.F2.T2, title: Cost guardrail alarm on the dev stage }
+        title: Structural and vocabulary diversion
+        status: deferred
+        spec: docs/PRD.md
+        design: "Failing records go to an isolated channel per adapter. Diverted volume is quality, not just errors."
+        acceptance: A bad record never lands on the main topic and never disappears.
+        stories:
+          - key: E7.F2.S1
+            title: "A malformed record is inspectable, not lost"
+            status: deferred
+            spec: docs/PRD.md
+            design: §8.3 data quality.
+            acceptance: "Invalid envelope appears on adapter A's divert topic with the validation error."
+            tasks:
+              - { key: E7.F2.S1.T1, title: Validation consumer before index write, status: deferred }
+              - { key: E7.F2.S1.T2, title: Per-adapter divert topic and metric, status: deferred }
 
-# Cross cutting ordering. Within a feature, tasks are sequential by default.
-# These are the edges that are not implied by the hierarchy.
+  - key: E8
+    title: Persistence
+    priority: 1
+    phase: 3
+    status: deferred
+    labels: [storage]
+    spec: docs/TARGET-STATE-ARCHITECTURE.md
+    design: "Index for retrieval by subject and time, tenant-first partitioned. Object store for bytes with retention lock and hold. Residency is topology. Keys may be customer held."
+    acceptance: Cross-tenant read is inexpressible. Hold refuses deletion at the store. Dangling reference count is zero.
+    features:
+      - key: E8.F1
+        title: Blob write-then-publish
+        status: deferred
+        implements: [ADR-0006]
+        spec: schemas/blob-reference.schema.json
+        design: Bytes durable before reference publication. Sweeper reclaims orphans.
+        acceptance: "Fault between write and publish leaves an orphan, never a dangling ref."
+        stories:
+          - key: E8.F1.S1
+            title: A crash after S3 PUT and before Kafka produce is recoverable
+            status: deferred
+            spec: docs/PRD.md
+            design: "FR-5.3, AR-10."
+            acceptance: Injected fault leaves an unreferenced object; sweeper deletes or republishes it; no envelope points at missing bytes.
+            tasks:
+              - { key: E8.F1.S1.T1, title: Enforce write then publish ordering, status: deferred }
+              - { key: E8.F1.S1.T2, title: Orphan sweeper, status: deferred }
+              - { key: E8.F1.S1.T3, title: Dangling-ref metric stays zero, status: deferred }
+      - key: E8.F2
+        title: Retention and legal hold at the store
+        status: deferred
+        implements: [ADR-0006]
+        spec: docs/PRD.md
+        design: "FR-5.5, FR-5.6. Application-level refusal is one bug away from a lapse."
+        acceptance: Held object delete is refused by the store. Expiry is suspended while held.
+        stories:
+          - key: E8.F2.S1
+            title: "Compliance officer's hold survives a delete API call"
+            status: deferred
+            spec: docs/PRD.md
+            design: "AR-02. Verify by asserting refusal, not by reading a flag."
+            acceptance: DeleteObject on a held key returns an error from the store.
+            tasks:
+              - { key: E8.F2.S1.T1, title: Object lock on legal hold, status: deferred }
+              - { key: E8.F2.S1.T2, title: Hold verification probe used at cutover, status: deferred }
+          - key: E8.F2.S2
+            title: Unheld content expires without an application job
+            status: deferred
+            spec: docs/PRD.md
+            design: Retention class on the blob reference is enforced by the bucket lifecycle.
+            acceptance: "After retention, the object is gone and the index row is gone."
+            tasks:
+              - { key: E8.F2.S2.T1, title: Retention class → lifecycle mapping, status: deferred }
+              - { key: E8.F2.S2.T2, title: Index expiry aligned to occurrence time, status: deferred }
+      - key: E8.F3
+        title: Tenant-first index
+        status: deferred
+        implements: [ADR-0008]
+        spec: docs/PRD.md
+        design: "FR-6.5, P9. A filter can be omitted; a partition key cannot."
+        acceptance: Query type requires tenant_id; missing tenant does not compile or is a 400 before execution.
+        stories:
+          - key: E8.F3.S1
+            title: An out-of-scope query cannot be expressed
+            status: deferred
+            spec: docs/PRD.md
+            design: Structural isolation.
+            acceptance: Broker Estate.Query includes tenant in the key; tests omit it and fail to compile or 400.
+            tasks:
+              - { key: E8.F3.S1.T1, title: "Index partition tenant, subject, time", status: deferred }
+              - { key: E8.F3.S1.T2, title: API rejects missing tenant_id, status: deferred }
+      - key: E8.F4
+        title: Residency and customer keys
+        status: deferred
+        spec: docs/PRD.md
+        design: "FR-5.7, FR-5.8. Residency is a deployment property. CMK is Should, may trail GA."
+        acceptance: Records for a residency=eu tenant never land in us buckets.
+        stories:
+          - key: E8.F4.S1
+            title: Administrator selects EU residency and data does not leave the region
+            status: deferred
+            spec: docs/PRD.md
+            design: NFR-4.1.
+            acceptance: "Topology test: eu tenant produce/consume stays on eu resources."
+            tasks:
+              - { key: E8.F4.S1.T1, title: Per-tenant residency on tenant record, status: deferred }
+              - { key: E8.F4.S1.T2, title: Stack routing by residency, status: deferred }
+          - key: E8.F4.S2
+            title: Tenant requiring key custody holds the encryption keys
+            status: deferred
+            spec: docs/PRD.md
+            design: Q2 in PRD. Should.
+            acceptance: Envelope payload_ref.encryption_key_id is the customer CMK; platform cannot decrypt without it.
+            tasks:
+              - { key: E8.F4.S2.T1, title: CMK envelope encryption path, status: deferred }
+              - { key: E8.F4.S2.T2, title: Document deferral if not GA, status: deferred }
+
+  - key: E9
+    title: Federated read
+    priority: 1
+    phase: 3
+    status: deferred
+    labels: [read-path, go]
+    spec: Middleware/query-broker
+    design: One read interface across estates. Fan-out with a deadline. Merge on signal_id. Partial results named. Reads themselves are audited.
+    acceptance: "With one estate down, results return, labelled partial, naming the estate. Duplicates collapse. Read audit records who/what/when/case."
+    features:
+      - key: E9.F1
+        title: "Federation, merge, honest partials"
+        status: deferred
+        implements: [ADR-0008]
+        spec: Middleware/query-broker
+        design: "Concurrent fan-out, deadline, merge on signal_id, managed plane wins ties."
+        acceptance: Duplicate merge and partial result behaviour are covered by tests.
+        stories:
+          - key: E9.F1.S1
+            title: Investigator gets one row when both estates hold the same signal
+            status: closed
+            spec: docs/PRD.md
+            design: "FR-6.2, UC5."
+            acceptance: Same signal_id from managed and self_hosted collapses to one result.
+            tasks:
+              - { key: E9.F1.S1.T1, title: Broker fan out and merge, status: closed }
+              - { key: E9.F1.S1.T2, title: Managed plane wins ties, status: closed }
+          - key: E9.F1.S2
+            title: Investigator can tell nothing happened from we could not see
+            status: closed
+            spec: docs/PRD.md
+            design: "FR-6.3, FR-6.4, AR-07."
+            acceptance: "When stub estate times out, response is 200, partial=true, estate named."
+            tasks:
+              - { key: E9.F1.S2.T1, title: Partial result reporting, status: closed }
+              - { key: E9.F1.S2.T2, title: Deadline so a slow estate cannot stall, status: deferred }
+      - key: E9.F2
+        title: Index-backed managed estate
+        status: deferred
+        implements: [ADR-0008]
+        spec: DevOps/Cloud/cdk/lib/core-stack.ts
+        design: Replace StubEstate with the signal index.
+        acceptance: Broker tests pass unchanged against the real implementation.
+        stories:
+          - key: E9.F2.S1
+            title: "Investigator query hits the index, not a stub"
+            status: deferred
+            spec: docs/PRD.md
+            design: FR-6.1.
+            acceptance: Signals written from the bus are returned by the broker for the managed estate.
+            tasks:
+              - { key: E9.F2.S1.T1, title: Signal index writer from the bus, status: deferred }
+              - { key: E9.F2.S1.T2, title: Index backed Estate implementation, status: deferred }
+              - { key: E9.F2.S1.T3, title: Tenant scoping enforced structurally, status: deferred }
+      - key: E9.F3
+        title: Blob handles across estates
+        status: deferred
+        implements: [ADR-0006, ADR-0008]
+        spec: schemas/blob-reference.schema.json
+        design: "Bytes may remain self-hosted during migration. Broker mints time-bounded references, does not proxy bytes."
+        acceptance: resolvable_from=self_hosted returns a short-lived signed handle.
+        stories:
+          - key: E9.F3.S1
+            title: Investigator opens a self-hosted screenshot without inbound access to the estate
+            status: deferred
+            spec: docs/PRD.md
+            design: FR-6.6.
+            acceptance: Handle expires; the estate serves bytes outbound or via pre-signed local store.
+            tasks:
+              - { key: E9.F3.S1.T1, title: Signed handle broker for estate resident blobs, status: deferred }
+              - { key: E9.F3.S1.T2, title: Handle TTL and single-use option, status: deferred }
+      - key: E9.F4
+        title: Read audit
+        status: deferred
+        spec: docs/PRD.md
+        design: FR-6.7. In an evidentiary context the reading is as significant as the collecting.
+        acceptance: "Every query stores actor, subject scope, time, case_id, estates contacted, partial flag."
+        stories:
+          - key: E9.F4.S1
+            title: "Compliance owner sees who read a subject's history"
+            status: deferred
+            spec: docs/PRD.md
+            design: UC6 companion.
+            acceptance: "Read audit log for subject-0001 lists investigator, case, and timestamp."
+            tasks:
+              - { key: E9.F4.S1.T1, title: Read audit record on every broker query, status: deferred }
+              - { key: E9.F4.S1.T2, title: Query API for audit by subject and by actor, status: deferred }
+
+  - key: E10
+    title: Scoring and tenant rules
+    priority: 1
+    phase: 4
+    status: deferred
+    labels: [scoring]
+    spec: docs/adr/0009-pinned-scoring-model-version-per-tenant.md
+    design: Derived values carry model_version. Version is pinned per tenant. Platform migration never coincides with a model change. Rules cannot be authored unbounded or against missing vocab.
+    acceptance: A tenant with model 1.4.0 never sees 1.5.0 scores until a separate upgrade with a comparison period.
+    features:
+      - key: E10.F1
+        title: Pinned model version
+        status: deferred
+        implements: [ADR-0009]
+        spec: docs/adr/0009-pinned-scoring-model-version-per-tenant.md
+        design: Tenant.scoring_model_version is the pin. Derived.risk_score.model_version must match.
+        acceptance: Mixing migration and model upgrade is refused by policy.
+        stories:
+          - key: E10.F1.S1
+            title: Migration operator cannot cut over and bump the model in one change
+            status: deferred
+            spec: docs/PRD.md
+            design: "FR-7.2, FR-7.3, AR-05."
+            acceptance: Cutover API rejects a request that also changes scoring_model_version.
+            tasks:
+              - { key: E10.F1.S1.T1, title: Pin stored on tenant, status: deferred }
+              - { key: E10.F1.S1.T2, title: Cutover refuses combined model change, status: deferred }
+          - key: E10.F1.S2
+            title: Investigator can tell a score from an observed fact
+            status: deferred
+            spec: docs/PRD.md
+            design: "FR-7.7. derived.* vs observed types."
+            acceptance: UI and API mark derived.risk_score as inferred; file_action.modify is observed.
+            tasks:
+              - { key: E10.F1.S2.T1, title: Stamp model_version on derived attributes, status: deferred }
+              - { key: E10.F1.S2.T2, title: Presentation flag derived vs observed, status: deferred }
+      - key: E10.F2
+        title: Rule authoring validation
+        status: deferred
+        spec: docs/PRD.md
+        design: "FR-7.5, FR-7.6. Unbounded or unknown-vocab rules are rejected at authoring time."
+        acceptance: A rule against signal_type=made_up is 400. A rule with no bound is 400.
+        stories:
+          - key: E10.F2.S1
+            title: Administrator cannot save a rule that refers to a retired signal type
+            status: deferred
+            spec: docs/PRD.md
+            design: Vocabulary is executable language.
+            acceptance: PUT rule with unknown type fails with the missing key named.
+            tasks:
+              - { key: E10.F2.S1.T1, title: Rule schema validates signal_type against taxonomy, status: deferred }
+              - { key: E10.F2.S1.T2, title: Reject unbounded window or threshold, status: deferred }
+      - key: E10.F3
+        title: Dual-run comparison before upgrade
+        status: deferred
+        implements: [ADR-0009]
+        spec: docs/PRD.md
+        design: FR-7.4 Should. Both versions computed; divergence reported.
+        acceptance: Comparison report exists before pin moves.
+        stories:
+          - key: E10.F3.S1
+            title: Product owner sees score divergence before promoting 1.5.0
+            status: deferred
+            spec: docs/PRD.md
+            design: Prevents the false-positive wave blamed on migration.
+            acceptance: Report names percent of subjects whose band changed.
+            tasks:
+              - { key: E10.F3.S1.T1, title: Shadow-run second model version, status: deferred }
+              - { key: E10.F3.S1.T2, title: Divergence report, status: deferred }
+
+  - key: E11
+    title: Outbound estate shipper
+    priority: 1
+    phase: 4
+    status: deferred
+    labels: [migration, go]
+    spec: Middleware/edge-shipper
+    design: Deployed in the customer estate. Outbound only. Checkpoint advances only after ack. Health is self-reported on the same channel.
+    acceptance: Restart resumes from checkpoint; replay is absorbed; skip is impossible. No listening port.
+    features:
+      - key: E11.F1
+        title: Outbound checkpointed transmission
+        status: deferred
+        implements: [ADR-0007]
+        spec: Middleware/edge-shipper
+        design: Position durable before a batch is complete. Ack then checkpoint. Replay on gap.
+        acceptance: Kill -9 after send and before checkpoint; restart resends; managed plane idempotency absorbs.
+        stories:
+          - key: E11.F1.S1
+            title: Customer security function permits the component because it dials out only
+            status: deferred
+            spec: docs/PRD.md
+            design: FR-8.2. The gate that precedes technical merit.
+            acceptance: Binary has no listen socket; tests assert no bind.
+            tasks:
+              - { key: E11.F1.S1.T1, title: Outbound shipper with atomic checkpoint, status: closed }
+              - { key: E11.F1.S1.T2, title: No-listen assertion in tests, status: deferred }
+          - key: E11.F1.S2
+            title: An interrupted send never skips a record
+            status: deferred
+            spec: docs/PRD.md
+            design: "FR-8.3, FR-8.4."
+            acceptance: "Fault injection: replay duplicates, zero gaps."
+            tasks:
+              - { key: E11.F1.S2.T1, title: Checkpoint file format and fsync, status: deferred }
+              - { key: E11.F1.S2.T2, title: Restart resumes from checkpoint, status: deferred }
+      - key: E11.F2
+        title: Self-reported health
+        status: deferred
+        implements: [ADR-0007]
+        spec: docs/PRD.md
+        design: FR-8.5. Cannot be probed inbound.
+        acceptance: Health frames on the outbound channel include last checkpoint and lag.
+        stories:
+          - key: E11.F2.S1
+            title: Migration operator sees estate lag without opening a port
+            status: deferred
+            spec: docs/PRD.md
+            design: UC8 observability.
+            acceptance: Managed plane displays last_seen and checkpoint age from self-reports.
+            tasks:
+              - { key: E11.F2.S1.T1, title: Self reported health over the outbound channel, status: deferred }
+              - { key: E11.F2.S1.T2, title: Lag metric from checkpoint age, status: deferred }
+
+  - key: E12
+    title: Migration programme
+    priority: 1
+    phase: 4
+    status: deferred
+    labels: [migration]
+    spec: docs/TARGET-STATE-ARCHITECTURE.md
+    design: "Assessment, compatibility, read-path first, collection switch, history, rollback, decommission. Tooling is the product. Cost per tenant and rollback rate are first-class metrics."
+    acceptance: "A tenant is assessed, cut over, and rolled back without a bespoke runbook. Changed compatibility cannot cut over without recorded acknowledgement."
+    features:
+      - key: E12.F1
+        title: Exposure-scored assessment
+        status: deferred
+        implements: [ADR-0008]
+        spec: docs/TARGET-STATE-ARCHITECTURE.md
+        design: "UC7. Volume, retention, holds, investigations, jurisdiction spread, customisation depth."
+        acceptance: Assessment artefact exists per tenant and ranks exposure vs cost.
+        stories:
+          - key: E12.F1.S1
+            title: Migration operator gets an assessment rather than a spreadsheet
+            status: deferred
+            spec: docs/PRD.md
+            design: §12.4 legacy exposure index.
+            acceptance: POST assess returns the six dimensions and a recommended sequence.
+            tasks:
+              - { key: E12.F1.S1.T1, title: "Assessment job: volume, holds, jurisdictions, rules", status: deferred }
+              - { key: E12.F1.S1.T2, title: Exposure score persisted on tenant, status: deferred }
+          - key: E12.F1.S2
+            title: Jurisdiction check happens before any other migration step
+            status: deferred
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: Discovering unlawfulness late invalidates the rest.
+            acceptance: Assessment fails closed if managed plane may not hold the subject mix.
+            tasks:
+              - { key: E12.F1.S2.T1, title: Jurisdiction distribution on the assessment, status: deferred }
+              - { key: E12.F1.S2.T2, title: Block assessment pass when residency cannot host, status: deferred }
+      - key: E12.F2
+        title: Rule and threshold compatibility report
+        status: deferred
+        implements: [ADR-0009]
+        spec: docs/adr/0009-pinned-scoring-model-version-per-tenant.md
+        design: "Classify every tenant rule as identical, changed, or dependent on a retired type. Changed requires acknowledgement."
+        acceptance: Report names each rule and class; cutover refuses changed without ack.
+        stories:
+          - key: E12.F2.S1
+            title: "Cutover is a reviewable decision, not an act of faith"
+            status: deferred
+            spec: docs/PRD.md
+            design: "FR-8.11, FR-8.12, UC7."
+            acceptance: A tenant with one changed rule cannot enter cutover without an ack record.
+            tasks:
+              - { key: E12.F2.S1.T1, title: Static analysis of tenant rules against the taxonomy, status: deferred }
+              - { key: E12.F2.S1.T2, title: Threshold drift estimate under the pinned model, status: deferred }
+              - { key: E12.F2.S1.T3, title: Report generation and cutover gate, status: deferred }
+      - key: E12.F3
+        title: Read path first
+        status: deferred
+        implements: [ADR-0008]
+        spec: docs/TARGET-STATE-ARCHITECTURE.md
+        design: FR-8.6. Value before irreversibility. If the programme stops here the tenant is still better off.
+        acceptance: Tenant uses the managed interface while data remains in the estate.
+        stories:
+          - key: E12.F3.S1
+            title: Investigator uses one UI while bytes still live in the estate
+            status: deferred
+            spec: docs/PRD.md
+            design: UC8 first step.
+            acceptance: Federation returns estate data; no data copy has occurred; rollback is DNS/config.
+            tasks:
+              - { key: E12.F3.S1.T1, title: "Migration state: read_path_managed", status: deferred }
+              - { key: E12.F3.S1.T2, title: Console pointed at broker only, status: deferred }
+      - key: E12.F4
+        title: Collection switch
+        status: deferred
+        spec: docs/TARGET-STATE-ARCHITECTURE.md
+        design: FR-8.7. New collection to managed plane; estate stops growing. Reversible by redirect.
+        acceptance: "After switch, new envelopes have estate=managed. Redirect restores estate=self_hosted."
+        stories:
+          - key: E12.F4.S1
+            title: Administrator redirects new capture without moving history
+            status: deferred
+            spec: docs/PRD.md
+            design: Independently reversible.
+            acceptance: State machine transition new_collection_managed is reversible within the window.
+            tasks:
+              - { key: E12.F4.S1.T1, title: Collection target on tenant migration state, status: deferred }
+              - { key: E12.F4.S1.T2, title: Adapters honour the target estate, status: deferred }
+      - key: E12.F5
+        title: "History: backfill or expire"
+        status: deferred
+        implements: [ADR-0008]
+        spec: docs/TARGET-STATE-ARCHITECTURE.md
+        design: FR-8.8. Index and metadata first. Bytes backfill or age out. Cost of each presented.
+        acceptance: Recommendation names cheaper option; holds never age out.
+        stories:
+          - key: E12.F5.S1
+            title: Migration operator chooses expire when retention is shorter than the programme
+            status: deferred
+            spec: docs/PRD.md
+            design: Most tenants. Bulk bytes have no cheap option.
+            acceptance: Tool shows backfill $X vs expire $Y; holds listed as must-move.
+            tasks:
+              - { key: E12.F5.S1.T1, title: Metadata and index backfill job, status: deferred }
+              - { key: E12.F5.S1.T2, title: Backfill versus age out cost model, status: deferred }
+              - { key: E12.F5.S1.T3, title: Legal hold carries across the boundary, status: deferred }
+      - key: E12.F6
+        title: "Cutover, rollback, decommission"
+        status: deferred
+        implements: [ADR-0008]
+        spec: Docs/deployment.md
+        design: "FR-8.9\u20138.14, UC8\u2013UC10. Persisted state machine. Rollback is a supported operation. Decommission needs human approval after the window."
+        acceptance: "Rollback within window: no data loss, no hold lapse. Cost per tenant and rollback rate are emitted."
+        stories:
+          - key: E12.F6.S1
+            title: Migration operator rolls back without opening an incident
+            status: deferred
+            spec: docs/PRD.md
+            design: UC9. Zero rollback rate would mean rollback is impractical.
+            acceptance: POST rollback restores prior state; holds still refuse delete.
+            tasks:
+              - { key: E12.F6.S1.T1, title: Per tenant cutover state machine, status: deferred }
+              - { key: E12.F6.S1.T2, title: Rollback within window, status: deferred }
+              - { key: E12.F6.S1.T3, title: Hold verification by delete-refusal after rollback, status: deferred }
+          - key: E12.F6.S2
+            title: Self-hosted deployment is retired only with explicit approval after the window
+            status: deferred
+            spec: docs/PRD.md
+            design: UC10.
+            acceptance: Decommission is blocked until window elapsed and an approver is recorded.
+            tasks:
+              - { key: E12.F6.S2.T1, title: Decommission gate and approver, status: deferred }
+              - { key: E12.F6.S2.T2, title: Cost per tenant and rollback rate metrics, status: deferred }
+
+  - key: E13
+    title: Admin portal
+    priority: 2
+    phase: 4
+    status: deferred
+    labels: [ui, angular]
+    spec: Portals/admin-portal
+    design: "Administrators configure policy, scope, retention, adapters, sessions, and migration. Unsafe states are hard to express. Consequence of widening collection is shown."
+    acceptance: Admin can set policy and see the capture-mode consequence. Scope pickers only list held scope. Migration state is visible.
+    features:
+      - key: E13.F1
+        title: Admin scaffold and contract client
+        status: deferred
+        spec: Portals/README.md
+        design: Angular + proxy to control plane and broker. Shared generated models.
+        acceptance: ng serve reaches /v1/authority and /v1/adapters without CORS hacks.
+        stories:
+          - key: E13.F1.S1
+            title: Administrator loads the portal against local middleware
+            status: deferred
+            spec: Portals/README.md
+            design: Local-first.
+            acceptance: ng serve --proxy-config reaches control plane.
+            tasks:
+              - { key: E13.F1.S1.T1, title: Angular admin scaffold and proxy config, status: deferred }
+              - { key: E13.F1.S1.T2, title: Shared generated API client, status: deferred }
+      - key: E13.F2
+        title: Policy administration with consequences
+        status: deferred
+        spec: docs/PRD.md
+        design: FR-9.6. Widening collection is obvious.
+        acceptance: Toggling continuous_screen shows who must approve in each jurisdiction before save.
+        stories:
+          - key: E13.F2.S1
+            title: Administrator sees who must approve before enabling a more intrusive mode
+            status: deferred
+            spec: docs/PRD.md
+            design: Unsafe states hard to express.
+            acceptance: UI lists approver role per jurisdiction for the selected mode; save is blocked without required approvals existing.
+            tasks:
+              - { key: E13.F2.S1.T1, title: Policy editor bound to jurisdiction_policy, status: deferred }
+              - { key: E13.F2.S1.T2, title: "Consequence panel: mode \u2192 approver \u2192 missing approvals", status: deferred }
+      - key: E13.F3
+        title: "Approvals, sessions, adapter registry"
+        status: deferred
+        spec: docs/PRD.md
+        design: "Admin records approvals, opens/closes sessions, sees registered adapters."
+        acceptance: Cannot open a session the gate would deny; denial reason is shown in the UI.
+        stories:
+          - key: E13.F3.S1
+            title: Administrator records a works-council approval with evidence
+            status: deferred
+            spec: docs/PRD.md
+            design: UC3 input.
+            acceptance: "Approval row has role, recorded_at, evidence_ref."
+            tasks:
+              - { key: E13.F3.S1.T1, title: Approval form and API client, status: deferred }
+              - { key: E13.F3.S1.T2, title: Evidence ref required for consent basis, status: deferred }
+          - key: E13.F3.S2
+            title: Administrator is shown the denial instead of a spinner
+            status: deferred
+            spec: docs/PRD.md
+            design: FR-4.6 in the UI.
+            acceptance: Opening continuous_screen for DE subject renders the gate reason.
+            tasks:
+              - { key: E13.F3.S2.T1, title: Session open form calls /v1/authority/decisions, status: deferred }
+              - { key: E13.F3.S2.T2, title: Render denial_reason, status: deferred }
+          - key: E13.F3.S3
+            title: Administrator sees registered adapters and their declared modes
+            status: deferred
+            spec: docs/PRD.md
+            design: Coverage starts with the registry.
+            acceptance: Adapter list shows capture_modes and emits from manifests.
+            tasks:
+              - { key: E13.F3.S3.T1, title: Adapter registry view, status: deferred }
+      - key: E13.F4
+        title: Migration state for operators
+        status: deferred
+        spec: docs/PRD.md
+        design: UC7–UC10 in the admin UI.
+        acceptance: "Tenant page shows state machine, assessment, compatibility class, cost so far."
+        stories:
+          - key: E13.F4.S1
+            title: "Migration operator drives cutover from the portal, not a runbook"
+            status: deferred
+            spec: docs/PRD.md
+            design: Tooling is the product.
+            acceptance: "Each legal transition is a button; illegal ones are absent, not disabled-and-callable."
+            tasks:
+              - { key: E13.F4.S1.T1, title: Tenant migration panel, status: deferred }
+              - { key: E13.F4.S1.T2, title: Only legal state transitions offered, status: deferred }
+
+  - key: E14
+    title: Client portal
+    priority: 2
+    phase: 4
+    status: deferred
+    labels: [ui, angular]
+    spec: Portals/client-portal
+    design: "Investigators and compliance owners. Timelines, case views, provenance, export. Degradation is displayed. Scope is reflected, not enforced here."
+    acceptance: With one estate down the banner names it and counts are qualified. Timeline shows decision_id. Export is a documented format.
+    features:
+      - key: E14.F1
+        title: Client scaffold
+        status: deferred
+        spec: Portals/README.md
+        design: "Same proxy and shared models as admin. Different audience, different obligations."
+        acceptance: ng serve reaches /v1/signals.
+        stories:
+          - key: E14.F1.S1
+            title: Investigator loads the client portal against local broker
+            status: deferred
+            spec: Portals/README.md
+            design: Local-first.
+            acceptance: "Proxy /v1/signals \u2192 :8081."
+            tasks:
+              - { key: E14.F1.S1.T1, title: Angular client scaffold and proxy config, status: deferred }
+      - key: E14.F2
+        title: Honest partial results
+        status: deferred
+        implements: [ADR-0008]
+        spec: Portals/README.md
+        design: "Architectural, not cosmetic. Silent half-data is worse than an error."
+        acceptance: Estate status banner; qualified counts.
+        stories:
+          - key: E14.F2.S1
+            title: Investigator sees which estate failed
+            status: deferred
+            spec: docs/PRD.md
+            design: "FR-9.2, UC5."
+            acceptance: "Fixture with self_hosted timeout shows banner and '12 results, 1 estate unavailable'."
+            tasks:
+              - { key: E14.F2.S1.T1, title: Estate status banner, status: deferred }
+              - { key: E14.F2.S1.T2, title: Qualify counts when results are partial, status: deferred }
+      - key: E14.F3
+        title: Case-bounded timeline with provenance
+        status: deferred
+        spec: docs/PRD.md
+        design: "UC5, FR-9.4. Every row traces to adapter and decision."
+        acceptance: "Timeline for a case lists signals with adapter_id, decision_id, derived vs observed."
+        stories:
+          - key: E14.F3.S1
+            title: Investigator reviews a subject across sources in one view
+            status: deferred
+            spec: docs/PRD.md
+            design: G2 cross-source questions.
+            acceptance: Filter by subject; rows from two adapters interleave by occurred_at.
+            tasks:
+              - { key: E14.F3.S1.T1, title: Signal timeline view, status: deferred }
+              - { key: E14.F3.S1.T2, title: Case scope required on the query, status: deferred }
+          - key: E14.F3.S2
+            title: Compliance owner opens a record and sees the authority that permitted it
+            status: deferred
+            spec: docs/PRD.md
+            design: UC6.
+            acceptance: "Record drawer shows basis, approver role, jurisdiction, policy_version, expires_at."
+            tasks:
+              - { key: E14.F3.S2.T1, title: Provenance drawer from decision_id, status: deferred }
+              - { key: E14.F3.S2.T2, title: Link to hold and retention class, status: deferred }
+      - key: E14.F4
+        title: Scope reflected from the data layer
+        status: deferred
+        spec: docs/PRD.md
+        design: FR-9.3. The UI never offers a scope the caller does not hold.
+        acceptance: Scope dropdown is the intersection of token grants and data-layer partitions.
+        stories:
+          - key: E14.F4.S1
+            title: Investigator cannot pick a team they do not belong to
+            status: deferred
+            spec: docs/PRD.md
+            design: Presentational scope is not a control.
+            acceptance: Token without team X omits X from the picker; crafting X in the query 400s.
+            tasks:
+              - { key: E14.F4.S1.T1, title: Scope aware filters, status: deferred }
+              - { key: E14.F4.S1.T2, title: Do not render ungranted scopes, status: deferred }
+      - key: E14.F5
+        title: Bulk export
+        status: deferred
+        spec: docs/PRD.md
+        design: FR-9.5. Documented stable format.
+        acceptance: Export of a case is JSONL of envelopes plus an authority sidecar.
+        stories:
+          - key: E14.F5.S1
+            title: Compliance owner exports a case in a stable format
+            status: deferred
+            spec: docs/PRD.md
+            design: "N5: export to their tooling, do not compete with it."
+            acceptance: Download matches the published export schema version.
+            tasks:
+              - { key: E14.F5.S1.T1, title: Export job and format doc, status: deferred }
+              - { key: E14.F5.S1.T2, title: Include estate status in the export manifest, status: deferred }
+
+  - key: E15
+    title: Observability and SLOs
+    priority: 2
+    phase: 4
+    status: deferred
+    labels: [observability]
+    spec: docs/TARGET-STATE-ARCHITECTURE.md
+    design: "Authority coverage, dangling refs, cross-adapter interference, volume baselines, cost per tenant, conformance score. Silent failures rate above loud ones."
+    acceptance: "Dashboards exist for the standing architecture measures in TSA \u00a716.3. Authority coverage below 100% pages."
+    features:
+      - key: E15.F1
+        title: Architectural measures
+        status: deferred
+        spec: docs/TARGET-STATE-ARCHITECTURE.md
+        design: These detect failures nothing else surfaces.
+        acceptance: "Metrics exported: authority_coverage, dangling_refs, interference_correlation, adapter_change_ratio."
+        stories:
+          - key: E15.F1.S1
+            title: Platform lead is paged when authority coverage is not complete
+            status: deferred
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: AR-01 trigger.
+            acceptance: A record without decision_id increments a counter and fires.
+            tasks:
+              - { key: E15.F1.S1.T1, title: Authority coverage metric from index, status: deferred }
+              - { key: E15.F1.S1.T2, title: Alert below 100 percent, status: deferred }
+          - key: E15.F1.S2
+            title: Platform lead is paged when a dangling blob reference exists
+            status: deferred
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: AR-10 / quality.
+            acceptance: "Any count > 0 is an incident class evidentiary loss."
+            tasks:
+              - { key: E15.F1.S2.T1, title: Dangling ref checker, status: deferred }
+              - { key: E15.F1.S2.T2, title: "Alert on count > 0", status: deferred }
+          - key: E15.F1.S3
+            title: Platform lead sees whether isolation has failed
+            status: deferred
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: Cross adapter interference correlation.
+            acceptance: Dashboard of error-rate correlation across adapters; any persistent correlation is a defect.
+            tasks:
+              - { key: E15.F1.S3.T1, title: Per-adapter error and latency series, status: deferred }
+              - { key: E15.F1.S3.T2, title: Correlation measure, status: deferred }
+      - key: E15.F2
+        title: Service levels and incident classes
+        status: deferred
+        spec: docs/TARGET-STATE-ARCHITECTURE.md
+        design: §13.4–13.5. Governance breach vs evidentiary loss vs silent degradation vs availability vs quality.
+        acceptance: Runbook maps each class to the designed failure behaviour.
+        stories:
+          - key: E15.F2.S1
+            title: On-call treats a silent source as severe despite no red dashboard
+            status: deferred
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: A down component is known; a quiet source looks like innocence.
+            acceptance: Page class Silent degradation is documented and tested.
+            tasks:
+              - { key: E15.F2.S1.T1, title: SLO docs per component, status: deferred }
+              - { key: E15.F2.S1.T2, title: Incident class runbooks, status: deferred }
+
+  - key: E16
+    title: Deploy and local-first
+    priority: 2
+    phase: 4
+    status: deferred
+    labels: [infra, cdk]
+    spec: docs/adr/0010-local-first-development-cdk-for-cloud.md
+    design: "Full path locally against protocol substitutes. Cloud is small separable CDK stacks, manual dispatch, destroy as a first-class operation. Known divergences are smoked before release."
+    acceptance: "A stage is brought up, smoked, and destroyed from the workflow alone. Local green is not claimed as cloud green."
+    features:
+      - key: E16.F1
+        title: Local protocol substitutes
+        status: deferred
+        implements: [ADR-0010]
+        spec: Docs/local-development.md
+        design: "Redpanda, MinIO, Postgres, no vendor SDK feature without a local equivalent."
+        acceptance: "make up && make test exercises the path without AWS."
+        stories:
+          - key: E16.F1.S1
+            title: Contributor runs the path without a cloud account
+            status: deferred
+            spec: docs/PRD.md
+            design: NFR-5.1. Unexercised architecture decays.
+            acceptance: "Documented make up brings bus, store, policy DB, and one adapter."
+            tasks:
+              - { key: E16.F1.S1.T1, title: "Compose files for Kafka, MinIO, Postgres, Redis", status: deferred }
+              - { key: E16.F1.S1.T2, title: Local development doc matches make targets, status: deferred }
+      - key: E16.F2
+        title: Separable cloud stacks
+        status: deferred
+        implements: [ADR-0005, ADR-0010]
+        spec: DevOps/Cloud/cdk
+        design: "Core, Ingest, ControlPlane. Destroying control plane loses no data. Ingest redeploy does not touch Core."
+        acceptance: Independent destroy verified per stack.
+        stories:
+          - key: E16.F2.S1
+            title: Platform engineer destroys ControlPlane and data remains
+            status: deferred
+            spec: docs/PRD.md
+            design: "NFR-5.2, NFR-5.4."
+            acceptance: "After destroy, index and objects still queryable."
+            tasks:
+              - { key: E16.F2.S1.T1, title: First deploy of the dev stage, status: deferred }
+              - { key: E16.F2.S1.T2, title: OIDC deploy role and least privilege policy, status: deferred }
+              - { key: E16.F2.S1.T3, title: Independent destroy verified per stack, status: deferred }
+      - key: E16.F3
+        title: Cloud divergence smoke
+        status: deferred
+        implements: [ADR-0010]
+        spec: Docs/local-development.md
+        design: "IAM, MSK auth, partition skew, object lock, cold starts."
+        acceptance: Smoke path exercises all five before any release.
+        stories:
+          - key: E16.F3.S1
+            title: A release cannot ship on local green alone
+            status: deferred
+            spec: docs/PRD.md
+            design: "NFR-5.3, AR-12."
+            acceptance: Pipeline requires the five-divergence smoke.
+            tasks:
+              - { key: E16.F3.S1.T1, title: Smoke test covering the known divergences, status: deferred }
+              - { key: E16.F3.S1.T2, title: Cost guardrail alarm on the dev stage, status: deferred }
+
+  - key: E17
+    title: Platform governance
+    priority: 2
+    phase: 4
+    status: deferred
+    labels: [governance]
+    spec: docs/TARGET-STATE-ARCHITECTURE.md
+    design: "Policy as code for mechanically checkable rules. Exceptions are owned, time-bounded, and expire. Decision records cover structural change. Paved road is faster than review."
+    acceptance: "Pipeline blocks unknown signal types, missing authority, missing spec on planned work, and cyclic deps. Exception count and age are reported."
+    features:
+      - key: E17.F1
+        title: Policy as code in CI
+        status: deferred
+        spec: docs/TARGET-STATE-ARCHITECTURE.md
+        design: §14.3. The mechanically checked policies are the ones that hold.
+        acceptance: make validate and bd lint/bd dep cycles are required checks.
+        stories:
+          - key: E17.F1.S1
+            title: A PR that emits an unknown signal type cannot merge
+            status: deferred
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: AR-04.
+            acceptance: CI job validate.py is required and blocking.
+            tasks:
+              - { key: E17.F1.S1.T1, title: Required status check for make validate, status: deferred }
+              - { key: E17.F1.S1.T2, title: Required bd lint and bd dep cycles, status: deferred }
+          - key: E17.F1.S2
+            title: A planned bead without acceptance cannot merge
+            status: deferred
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: "Plan validation, blocking."
+            acceptance: bd lint fails the PR.
+            tasks:
+              - { key: E17.F1.S2.T1, title: CI bd lint, status: deferred }
+              - { key: E17.F1.S2.T2, title: CI beads-sync --prune drift check, status: deferred }
+      - key: E17.F2
+        title: Exceptions and decision coverage
+        status: deferred
+        spec: docs/TARGET-STATE-ARCHITECTURE.md
+        design: Exception without expiry is a change to the standard and must be processed as one. AR-13.
+        acceptance: Structural PRs reference an ADR; exceptions have owner and expiry.
+        stories:
+          - key: E17.F2.S1
+            title: An architecture exception expires or becomes a standard
+            status: deferred
+            spec: docs/TARGET-STATE-ARCHITECTURE.md
+            design: §14.4.
+            acceptance: "Exception register lists owner, compensating control, expiry; CI warns on overdue."
+            tasks:
+              - { key: E17.F2.S1.T1, title: Exception record schema, status: deferred }
+              - { key: E17.F2.S1.T2, title: Overdue exception report, status: deferred }
+
+  - key: E18
+    title: Tenant lifecycle
+    priority: 2
+    phase: 4
+    status: deferred
+    labels: [control-plane]
+    spec: docs/PRD.md
+    design: "Tenant carries residency, pinned model, estate assignment, retention, migration state. Onboarding does not collect anything until policy and approvals exist."
+    acceptance: A new tenant cannot open a session until jurisdiction policy and at least the required approver records exist.
+    features:
+      - key: E18.F1
+        title: Tenant onboarding
+        status: deferred
+        spec: docs/PRD.md
+        design: "Create tenant, pin model, select residency, assign estate, set retention classes. Fail closed until policy exists."
+        acceptance: POST /v1/tenants succeeds; first authority evaluate fails closed until policy rows exist.
+        stories:
+          - key: E18.F1.S1
+            title: Administrator onboards a tenant without enabling capture by accident
+            status: deferred
+            spec: docs/PRD.md
+            design: "Anti-goal: do not make unauthorised collection easy."
+            acceptance: New tenant has no permitted_modes until policy is attached.
+            tasks:
+              - { key: E18.F1.S1.T1, title: "Tenant record: residency, model pin, estate, retention", status: deferred }
+              - { key: E18.F1.S1.T2, title: Evaluate fail-closed with no policy, status: deferred }
+          - key: E18.F1.S2
+            title: Scoring model pin is set at onboard and not silently defaulted later
+            status: deferred
+            spec: docs/PRD.md
+            design: FR-7.2.
+            acceptance: Missing pin is 400 on tenant create.
+            tasks:
+              - { key: E18.F1.S2.T1, title: Require scoring_model_version on create, status: deferred }
+              - { key: E18.F1.S2.T2, title: Pin visible on tenant GET, status: deferred }
+      - key: E18.F2
+        title: Retention and hold configuration
+        status: deferred
+        spec: docs/PRD.md
+        design: "Retention classes per tenant. Hold is per record/case, not a tenant-wide mute."
+        acceptance: Admin can set default class; hold is applied to records and verified at the store.
+        stories:
+          - key: E18.F2.S1
+            title: Administrator sets a retention class without being able to disable hold
+            status: deferred
+            spec: docs/PRD.md
+            design: Hold takes precedence.
+            acceptance: UI has no control that turns off store-level hold enforcement.
+            tasks:
+              - { key: E18.F2.S1.T1, title: Retention class on tenant, status: deferred }
+              - { key: E18.F2.S1.T2, title: Hold API cannot be overridden by retention settings, status: deferred }
+
+# Cross cutting ordering. Tasks within a story are sequential.
+# Stories in a feature are parallel. These edges are extra.
 dependencies:
-  - { blocked: E3.F3, blocker: E2.F1 }      # estate ingest needs real authority
-  - { blocked: E3.F2, blocker: E1.F1 }      # blob ordering needs the envelope
-  - { blocked: E4.F2, blocker: E3.F1 }      # index needs signals arriving
-  - { blocked: E4.F3, blocker: E3.F2 }      # blob resolution needs write ordering
-  - { blocked: E5.F2, blocker: E1.F2 }      # rule analysis needs taxonomy governance
-  - { blocked: E5.F3, blocker: E4.F2 }      # backfill needs the index
-  - { blocked: E5.F4, blocker: E5.F2 }      # no cutover without a compatibility report
-  - { blocked: E5.F4, blocker: E5.F3 }
-  - { blocked: E6.F2, blocker: E4.F1 }      # banner needs partial result reporting
-  - { blocked: E6.F3, blocker: E2.F2 }      # scoped views need subject resolution
-  - { blocked: E7.F2, blocker: E7.F1 }
-  - { blocked: E2.F3, blocker: E2.F1 }
-  - { blocked: E2.F1.T3, blocker: E2.F1.T2 }
+  - { blocked: E6.F2, blocker: E2.F1 }
+  - { blocked: E4.F3, blocker: E2.F1 }
+  - { blocked: E4.F2, blocker: E5.F1 }
+  - { blocked: E8.F1, blocker: E1.F4 }
+  - { blocked: E9.F2, blocker: E6.F1 }
+  - { blocked: E9.F3, blocker: E8.F1 }
+  - { blocked: E12.F2, blocker: E1.F2 }
+  - { blocked: E12.F5, blocker: E9.F2 }
+  - { blocked: E12.F6, blocker: E12.F2 }
+  - { blocked: E12.F6, blocker: E12.F5 }
+  - { blocked: E14.F2, blocker: E9.F1 }
+  - { blocked: E14.F3, blocker: E2.F7 }
+  - { blocked: E13.F2, blocker: E2.F1 }
+  - { blocked: E14.F4, blocker: E3.F1 }
+  - { blocked: E16.F3, blocker: E16.F2 }
+  - { blocked: E10.F1, blocker: E18.F1 }
+  - { blocked: E6.F2, blocker: E11.F1 }
+
+# counts: epics=18 features=65 stories=99 tasks=204 total_work=395
