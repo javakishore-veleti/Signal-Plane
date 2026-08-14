@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "Signal_Plane",
+  "project_id": "3335acc6-3fbc-4f68-b122-3283e093f782"
+}
