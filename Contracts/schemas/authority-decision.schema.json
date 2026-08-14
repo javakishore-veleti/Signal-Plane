@@ -4,7 +4,7 @@
   "title": "Authority decision",
   "description": "Produced by the control plane before any capture session opens. Who must approve depends on the capture mode, and the governing rule depends on the jurisdiction of the subject, not of the tenant.",
   "type": "object",
-  "required": ["decision_id", "tenant_id", "subject_id", "capture_mode", "granted", "basis", "policy_version", "evaluated_at"],
+  "required": ["decision_id", "tenant_id", "subject_id", "capture_mode", "granted", "basis", "policy_version", "evaluated_at", "expires_at"],
   "additionalProperties": false,
   "properties": {
     "decision_id": { "type": "string", "format": "uuid" },

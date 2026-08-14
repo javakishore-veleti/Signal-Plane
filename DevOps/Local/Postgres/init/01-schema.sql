@@ -58,10 +58,10 @@ INSERT INTO tenant VALUES ('tenant-demo', 'Demo tenant', 'scoring-1.4.0', 'manag
   ON CONFLICT DO NOTHING;
 
 INSERT INTO jurisdiction_policy VALUES
-  ('US-NC', 'policy-2026.3', ARRAY['PASSIVE_METADATA','CONTENT_CAPTURE','TRIGGERED_SCREEN','CONTINUOUS_SCREEN'],
+  ('US-NC', 'policy-2026.3', ARRAY['passive_metadata','content_capture','triggered_screen','continuous_screen'],
    NULL, 'notice', 3600, ARRAY['*.bank.example','*.health.example']),
-  ('DE',    'policy-2026.3', ARRAY['PASSIVE_METADATA'],
-   'WORKS_COUNCIL', 'consent', 1800, ARRAY['*.bank.example','*.health.example','*.union.example'])
+  ('DE',    'policy-2026.3', ARRAY['passive_metadata'],
+   'works_council', 'consent', 1800, ARRAY['*.bank.example','*.health.example','*.union.example'])
   ON CONFLICT DO NOTHING;
 
 INSERT INTO subject VALUES
@@ -70,7 +70,7 @@ INSERT INTO subject VALUES
   ON CONFLICT DO NOTHING;
 
 INSERT INTO approval (tenant_id, subject_id, capture_mode, approver) VALUES
-  ('tenant-demo', 'subject-0001', 'PASSIVE_METADATA', 'EMPLOYER'),
-  ('tenant-demo', 'subject-0001', 'CONTINUOUS_SCREEN', 'SUBJECT'),
-  ('tenant-demo', 'subject-0002', 'PASSIVE_METADATA', 'WORKS_COUNCIL')
+  ('tenant-demo', 'subject-0001', 'passive_metadata', 'employer'),
+  ('tenant-demo', 'subject-0001', 'continuous_screen', 'subject'),
+  ('tenant-demo', 'subject-0002', 'passive_metadata', 'works_council')
   ON CONFLICT DO NOTHING;
