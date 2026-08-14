@@ -152,7 +152,7 @@ Version 0.1.0. The ingest and read paths are working; the surface around them is
 | **What it must do** | [Product requirements](Docs/PRD.md) |
 | **How it's built** | [Target state architecture](Docs/TARGET-STATE-ARCHITECTURE.md) |
 | **Running it locally** | [Local development](Docs/local-development.md) |
-| **Shipping it** | [Deployment](Docs/deployment.md) |
+| **Shipping it** | [Deployment](Docs/deployment.md) — numbered Setup/Destroy Actions, one CloudFormation stack each |
 | **Working on it** | [Development workflow](Docs/development-workflow.md) · [Beads guide](Docs/BEADS-COMMAND-GUIDE.md) |
 
 ---

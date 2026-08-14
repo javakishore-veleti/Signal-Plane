@@ -59,13 +59,17 @@ before a release.
 
 ## Cloud
 
+CloudFormation stacks are scoped and numbered. You deploy them **one after
+another** from GitHub Actions (`AWS-NNN-Setup-<Scope>`), never as one monolith.
+Destroy is the reverse pair (`AWS-NNN-Destroy-<Scope>`). Full sequence:
+`Docs/deployment.md`.
+
 ```
 cd DevOps/Cloud/cdk
 npm install
 npx cdk synth                        # free, no credentials
-npx cdk deploy --context stage=dev
-npx cdk destroy --all --force
 ```
 
-Deployment is manual dispatch only, never on push. The default posture is nothing
-running.
+Do not `cdk destroy --all`. Each Destroy action targets one stack. Deployment is
+`workflow_dispatch` only, never on push. The default posture of a non-production
+stage is nothing running.
