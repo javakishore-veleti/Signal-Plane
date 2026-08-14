@@ -1,0 +1,12 @@
+flowchart TB
+  UI[Console and API<br/>single UI during transition]
+  QB[Query broker<br/>merges on signal_id]
+  MP[(Managed plane<br/>new capture and scoring)]
+  SH[(Self hosted estate<br/>history, outbound only)]
+
+  UI --> QB
+  QB --> MP
+  QB --> SH
+  SH -- outbound backfill --> MP
+
+  S1[1 read path moves] --> S2[2 new capture moves] --> S3[3 history backfills or ages out] --> S4[4 decommission]

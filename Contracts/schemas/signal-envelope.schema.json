@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://signal-plane.dev/schemas/signal-envelope/v1.json",
+  "title": "Normalized signal envelope",
+  "description": "The single integration contract of the platform. Every adapter emits this shape regardless of source system. Adding a source is a mapping exercise into this vocabulary, never a schema negotiation.",
+  "type": "object",
+  "required": ["schema_version", "signal_id", "tenant_id", "source", "subject", "occurred_at", "observed_at", "category", "signal_type", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "signal_id": { "type": "string", "format": "uuid", "description": "Deterministic v5 UUID over (tenant_id, source.adapter_id, source_native_id). Makes replay and federated merge idempotent." },
+    "tenant_id": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "required": ["adapter_id", "adapter_version", "source_system"],
+      "additionalProperties": false,
+      "properties": {
+        "adapter_id": { "type": "string" },
+        "adapter_version": { "type": "string" },
+        "source_system": { "type": "string" },
+        "source_native_id": { "type": "string" },
+        "estate": { "enum": ["managed", "self_hosted"], "default": "managed", "description": "Which plane produced this. Drives federated read routing during estate migration." }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "required": ["subject_id"],
+      "additionalProperties": false,
+      "properties": {
+        "subject_id": { "type": "string", "description": "Resolved canonical principal, assigned by the control plane." },
+        "resolution_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "raw_identifiers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "value"],
+            "properties": {
+              "kind": { "enum": ["upn", "email", "device_id", "account_sid", "employee_id", "ip"] },
+              "value": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "occurred_at": { "type": "string", "format": "date-time", "description": "When the event happened at the source." },
+    "observed_at": { "type": "string", "format": "date-time", "description": "When the adapter saw it." },
+    "ingested_at": { "type": "string", "format": "date-time" },
+    "category": {
+      "enum": ["application", "session", "file_action", "communication", "network", "web", "content_match", "language", "derived"],
+      "description": "Coarse routing dimension. Maps one-to-one to bus topic suffix."
+    },
+    "signal_type": { "type": "string", "description": "Taxonomy key, e.g. file_action.copy_to_removable. Governed by taxonomy.yaml; additive only within a schema_version." },
+    "attributes": { "type": "object", "description": "Type-specific fields, validated against the taxonomy entry for signal_type." },
+    "payload_ref": { "$ref": "https://signal-plane.dev/schemas/blob-reference/v1.json" },
+    "authority": {
+      "type": "object",
+      "required": ["decision_id", "basis", "policy_version"],
+      "additionalProperties": false,
+      "properties": {
+        "decision_id": { "type": "string" },
+        "basis": { "enum": ["notice", "consent", "contract", "legitimate_interest", "legal_obligation"] },
+        "jurisdiction": { "type": "string", "description": "ISO 3166 code or subdivision that supplied the governing rule." },
+        "policy_version": { "type": "string" }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model_version": { "type": "string", "description": "Pinned per tenant. A score without this is not comparable across time and is not admissible as evidence." },
+        "contribution": { "type": "number" }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["content_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "prev_hash": { "type": "string", "description": "Hash of the previous signal on this (tenant, subject) chain. Gives an append-only ordering that a reader can verify without trusting the store." }
+      }
+    }
+  }
+}

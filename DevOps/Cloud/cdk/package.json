@@ -1,0 +1,23 @@
+{
+  "name": "signal-plane-infra",
+  "version": "0.1.0",
+  "private": true,
+  "bin": { "signal-plane": "bin/app.js" },
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy --all --force"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.160.0",
+    "ts-node": "10.9.2",
+    "typescript": "5.6.2",
+    "@types/node": "22.7.4"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.160.0",
+    "constructs": "10.3.0"
+  }
+}

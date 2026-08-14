@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: control-plane
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+signalplane:
+  policy-store-url: ${POLICY_STORE_URL:postgresql://signalplane:signalplane@localhost:5432/signalplane}
+  # Decision lifetime is deliberately short. It bounds how long a revoked
+  # authority can still be acted on by an adapter holding a cached decision.
+  default-decision-lifetime: PT1H

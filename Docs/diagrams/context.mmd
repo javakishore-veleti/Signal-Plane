@@ -1,0 +1,45 @@
+flowchart TB
+  subgraph sources[Signal sources]
+    A1[Endpoint agents]
+    A2[Collaboration suite]
+    A3[Identity provider]
+    A4[Security tooling]
+    A5[Self hosted estate]
+  end
+
+  subgraph adapters[Adapters]
+    AD[One adapter per source<br/>emits normalized envelope]
+  end
+
+  subgraph control[Control plane]
+    SR[Subject resolution]
+    AG[Authority gate]
+    SL[Session lifecycle]
+    AR[Adapter registry]
+  end
+
+  BUS[(Event bus<br/>normalized envelopes)]
+  OBJ[(Object store<br/>payload bytes)]
+  IDX[(Signal index)]
+  QB[Query broker]
+  UI[Console]
+
+  A1 --> AD
+  A2 --> AD
+  A3 --> AD
+  A4 --> AD
+  A5 --> AD
+
+  AD -- session start only --> AG
+  AG --> SL
+  SR --> AG
+  AR --> AG
+
+  AD --> BUS
+  AD -- bytes --> OBJ
+  BUS --> IDX
+  IDX --> QB
+  A5 -. federated read .-> QB
+  OBJ -. signed handle .-> QB
+  QB --> UI
+  UI -- control calls --> SL

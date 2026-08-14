@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img" aria-label="Architecture: sources feed adapters, adapters pass through the authority gate to the event bus, then the query broker and portals. Payload bytes go to the object store by reference. The self-hosted estate stays readable through the broker during migration.">
+<title>Signal Plane architecture</title>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M1 1 L9 5 L1 9" fill="none" stroke="#73726c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<g font-family="Segoe UI,Helvetica,Arial,sans-serif">
+
+<rect x="20" y="40" width="190" height="50" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.5"/>
+<text x="115" y="70" font-size="15" fill="#04342C" text-anchor="middle">Endpoint agents</text>
+<rect x="20" y="98" width="190" height="50" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.5"/>
+<text x="115" y="128" font-size="15" fill="#04342C" text-anchor="middle">SaaS and identity</text>
+<rect x="20" y="156" width="190" height="50" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.5"/>
+<text x="115" y="186" font-size="15" fill="#04342C" text-anchor="middle">Security tooling</text>
+<rect x="20" y="214" width="190" height="50" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1.5"/>
+<text x="115" y="244" font-size="15" fill="#2C2C2A" text-anchor="middle">Self-hosted estate</text>
+
+<rect x="238" y="118" width="170" height="68" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+<text x="323" y="146" font-size="16" font-weight="600" fill="#26215C" text-anchor="middle">Adapters</text>
+<text x="323" y="167" font-size="13" fill="#534AB7" text-anchor="middle">one per source</text>
+
+<rect x="436" y="118" width="170" height="68" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.5"/>
+<text x="521" y="146" font-size="16" font-weight="600" fill="#412402" text-anchor="middle">Authority gate</text>
+<text x="521" y="167" font-size="13" fill="#854F0B" text-anchor="middle">who may collect what</text>
+
+<rect x="634" y="118" width="160" height="68" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+<text x="714" y="146" font-size="16" font-weight="600" fill="#26215C" text-anchor="middle">Event bus</text>
+<text x="714" y="167" font-size="13" fill="#534AB7" text-anchor="middle">normalized records</text>
+
+<rect x="822" y="118" width="160" height="68" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.5"/>
+<text x="902" y="146" font-size="16" font-weight="600" fill="#042C53" text-anchor="middle">Query broker</text>
+<text x="902" y="167" font-size="13" fill="#185FA5" text-anchor="middle">federates estates</text>
+
+<rect x="1010" y="118" width="160" height="68" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.5"/>
+<text x="1090" y="158" font-size="16" font-weight="600" fill="#042C53" text-anchor="middle">Portals</text>
+
+<rect x="634" y="266" width="160" height="60" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1.5"/>
+<text x="714" y="291" font-size="15" font-weight="600" fill="#2C2C2A" text-anchor="middle">Object store</text>
+<text x="714" y="311" font-size="13" fill="#5F5E5A" text-anchor="middle">payload bytes</text>
+
+<g stroke="#73726c" stroke-width="1.6" fill="none" marker-end="url(#a)">
+<path d="M210 65 C 226 65, 222 140, 234 148"/>
+<path d="M210 123 C 224 123, 224 146, 234 149"/>
+<path d="M210 181 C 224 181, 224 158, 234 153"/>
+<path d="M210 231 C 226 231, 222 166, 234 158"/>
+<path d="M408 152 H 432"/>
+<path d="M606 152 H 630"/>
+<path d="M794 152 H 818"/>
+<path d="M982 152 H 1006"/>
+</g>
+
+<g stroke="#73726c" stroke-width="1.6" fill="none" stroke-dasharray="6 5" marker-end="url(#a)">
+<path d="M323 186 V 296 H 630"/>
+<path d="M210 239 V 350 H 902 V 190"/>
+</g>
+
+<text x="360" y="288" font-size="13" fill="#73726c">bytes by reference</text>
+<text x="500" y="343" font-size="13" fill="#73726c">still readable during migration</text>
+</g>
+</svg>

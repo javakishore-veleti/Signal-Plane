@@ -1,0 +1,434 @@
+# Specification driven backlog.
+#
+# This file is the source of truth for what gets built. tools/beads-sync.py
+# projects it into the beads graph; it never reads back from beads. Change the
+# plan here, re-run the sync, and the graph follows.
+#
+# Every item carries the three fields that make a bead a specification rather
+# than a title: spec (the document it implements), design (how), and acceptance
+# (how we know it is done). bd lint fails items missing them.
+#
+# Levels: epic -> feature -> task. Beads ships bug|feature|task|epic|chore|decision
+# and has no "story" type; a four level hierarchy needs types.custom configured.
+# Features here are what most teams call stories.
+#
+# key is stable and is what the sync uses to recognise an item across runs.
+# Do not renumber keys. Retire an item by setting status: retired.
+
+prefix: sp
+
+decisions:
+  - key: ADR-0002
+    title: One normalized envelope is the integration contract
+    spec: docs/adr/0002-normalized-envelope-as-integration-contract.md
+  - key: ADR-0003
+    title: One adapter per source
+    spec: docs/adr/0003-adapter-per-source-not-shared-ingest.md
+  - key: ADR-0004
+    title: Authority gate precedes capture
+    spec: docs/adr/0004-authority-gate-precedes-capture.md
+  - key: ADR-0005
+    title: Control plane stays off the telemetry hot path
+    spec: docs/adr/0005-control-plane-off-the-telemetry-hot-path.md
+  - key: ADR-0006
+    title: Large payloads travel by reference
+    spec: docs/adr/0006-blobs-by-reference-never-on-the-bus.md
+  - key: ADR-0007
+    title: Self hosted estate ships outbound only
+    spec: docs/adr/0007-outbound-only-edge-shipper.md
+  - key: ADR-0008
+    title: Federated read path, no cutover
+    spec: docs/adr/0008-federated-read-path-during-migration.md
+  - key: ADR-0009
+    title: Scoring model version pinned per tenant
+    spec: docs/adr/0009-pinned-scoring-model-version-per-tenant.md
+
+epics:
+
+  - key: E1
+    title: Contracts and taxonomy
+    priority: 0
+    labels: [contracts]
+    spec: schemas/signal-envelope.schema.json
+    design: >
+      The four schemas plus taxonomy.yaml are the architecture. Everything
+      downstream is an implementation of them, so this epic gates the rest.
+    acceptance: >
+      make validate passes; every adapter manifest cross checks against the
+      taxonomy; contract tests cover determinism, hash chaining, and fail closed.
+    features:
+
+      - key: E1.F1
+        title: Envelope schema and shared adapter library
+        status: closed
+        implements: [ADR-0002]
+        spec: schemas/signal-envelope.schema.json
+        design: >
+          Deterministic v5 signal_id over tenant, adapter, native id. Per subject
+          hash chain. Envelope construction lives in the shared library so adapters
+          cannot drift.
+        acceptance: >
+          Contract tests prove id determinism, chain linkage, per subject chain
+          isolation, and refusal both without authority and after expiry.
+        tasks:
+          - { key: E1.F1.T1, title: Define signal envelope schema, status: closed }
+          - { key: E1.F1.T2, title: Implement AdapterContext build and hashing, status: closed }
+          - { key: E1.F1.T3, title: Contract tests for envelope invariants, status: closed }
+
+      - key: E1.F2
+        title: Taxonomy governance
+        implements: [ADR-0002]
+        spec: taxonomy.yaml
+        design: >
+          Additive only within a schema_version. The validator fails any manifest
+          emitting a signal_type the taxonomy does not know.
+        acceptance: >
+          A manifest with an unknown signal type or invalid category fails CI;
+          a taxonomy addition alone does not.
+        tasks:
+          - { key: E1.F2.T1, title: Cross check manifests against taxonomy, status: closed }
+          - key: E1.F2.T2
+            title: Fail validation when PyYAML is absent rather than skipping
+            design: >
+              validate.py currently prints a notice and passes when PyYAML is
+              missing, so the taxonomy check can silently not run.
+            acceptance: Missing PyYAML causes a non zero exit with a clear message.
+          - key: E1.F2.T3
+            title: Schema version bump procedure
+            design: Document what forces a new schema_version and how adapters migrate.
+            acceptance: docs/ describes the procedure; a worked example exists.
+
+  - key: E2
+    title: Control plane
+    priority: 0
+    labels: [control-plane, java]
+    spec: services/control-plane
+    design: >
+      Synchronous and low volume. Subject resolution, authority decisions, session
+      lifecycle, adapter registry. Never on the telemetry path.
+    acceptance: >
+      Authority decisions are issued from persisted policy; a denial always carries
+      a reason; no granted decision lacks an expiry.
+    features:
+
+      - key: E2.F1
+        title: Authority gate
+        implements: [ADR-0004]
+        spec: docs/adr/0004-authority-gate-precedes-capture.md
+        design: >
+          Deny by default. Jurisdiction follows the subject, not the tenant.
+          Approver role is derived from capture mode and may be overridden per
+          jurisdiction.
+        acceptance: >
+          subject-0002 in DE is denied CONTINUOUS_SCREEN with a reason naming the
+          jurisdiction; subject-0001 in US-NC is granted with a bounded expiry.
+        tasks:
+          - { key: E2.F1.T1, title: AuthorityGate evaluation logic, status: closed }
+          - key: E2.F1.T2
+            title: JDBC PolicyRepository implementation
+            priority: 0
+            design: >
+              Back the interface with the tables in tools/schema.sql. Tenant scoped
+              queries only; a query without a tenant predicate must not compile.
+            acceptance: >
+              Integration test seeds both demo subjects and asserts grant and denial
+              paths against a real database.
+          - key: E2.F1.T3
+            title: Decision cache invalidation on policy change
+            design: >
+              Adapters hold decisions for their bounded lifetime. A revocation must
+              take effect within the decision lifetime, which bounds exposure.
+            acceptance: Revoking approval stops capture within the configured lifetime.
+          - key: E2.F1.T4
+            title: Authority decision audit trail
+            design: Every decision, granted or denied, is persisted with its inputs.
+            acceptance: A decision id can be resolved to the policy version and approval that produced it.
+
+      - key: E2.F2
+        title: Subject resolution
+        spec: schemas/signal-envelope.schema.json
+        design: >
+          Map raw identifiers (upn, email, device id, account sid) to one canonical
+          subject with a confidence score. Ambiguity resolves to no subject rather
+          than a guess.
+        acceptance: >
+          Conflicting identifier claims produce an unresolved result and a diagnostic,
+          never a silent merge of two people.
+        tasks:
+          - { key: E2.F2.T1, title: Identifier to subject mapping and confidence }
+          - { key: E2.F2.T2, title: Ambiguity handling and diagnostics }
+
+      - key: E2.F3
+        title: Session lifecycle and coverage discovery
+        implements: [ADR-0005]
+        spec: docs/architecture.md
+        design: >
+          Coverage discovery answers which adapters can observe a subject, from the
+          registered manifests. Sessions terminate on a rule: schedule boundary,
+          decision expiry, retention clock, or case closure.
+        acceptance: >
+          A session outside its schedule window is closed automatically; explicit
+          termination is available but is not the normal path.
+        tasks:
+          - { key: E2.F3.T1, title: Adapter registry and manifest registration }
+          - { key: E2.F3.T2, title: Coverage discovery endpoint }
+          - { key: E2.F3.T3, title: Rule driven session termination }
+
+  - key: E3
+    title: Ingest path
+    priority: 1
+    labels: [ingest, python]
+    spec: adapters/python
+    design: One adapter per source, emitting to the bus, blobs by reference.
+    acceptance: Two adapters run concurrently without one degrading the other.
+    features:
+
+      - key: E3.F1
+        title: Reference adapter and emission
+        status: closed
+        implements: [ADR-0003]
+        spec: adapters/python/sources/directory_watch
+        design: Directory watch adapter demonstrating the full shape end to end.
+        acceptance: Runs with or without a broker present; output validates against the schema.
+        tasks:
+          - { key: E3.F1.T1, title: Directory watch adapter, status: closed }
+          - { key: E3.F1.T2, title: Kafka emission with stdout fallback, status: closed }
+
+      - key: E3.F2
+        title: Blob write ordering
+        implements: [ADR-0006]
+        spec: docs/adr/0006-blobs-by-reference-never-on-the-bus.md
+        design: >
+          Blob durable first, reference published second. Orphaned blobs are swept;
+          dangling references are not acceptable.
+        acceptance: >
+          A fault injected between write and publish leaves an orphan, never a
+          dangling reference. The sweeper reclaims it.
+        tasks:
+          - { key: E3.F2.T1, title: Enforce write then publish ordering }
+          - { key: E3.F2.T2, title: Orphan sweeper }
+          - { key: E3.F2.T3, title: Object lock on legal hold }
+
+      - key: E3.F3
+        title: Estate ingest endpoint
+        implements: [ADR-0007]
+        spec: edge-shipper
+        design: >
+          Receives batches from the edge shipper. Idempotent by signal_id, so a
+          replayed batch after a checkpoint failure is absorbed rather than doubled.
+        acceptance: Submitting the same batch twice produces the same stored state.
+        tasks:
+          - { key: E3.F3.T1, title: estate_ingest adapter handler }
+          - { key: E3.F3.T2, title: Batch idempotency by signal_id }
+          - { key: E3.F3.T3, title: Bearer authentication and per tenant rate limit }
+
+      - key: E3.F4
+        title: Failure isolation
+        implements: [ADR-0003]
+        spec: infra/cdk/lib/ingest-stack.ts
+        design: Per adapter DLQ routing and per source concurrency limits.
+        acceptance: A saturated adapter does not raise error rates on any other adapter.
+        tasks:
+          - { key: E3.F4.T1, title: Per adapter DLQ and redrive }
+          - { key: E3.F4.T2, title: Per source concurrency limits }
+
+  - key: E4
+    title: Read path
+    priority: 1
+    labels: [read-path, go]
+    spec: services/query-broker
+    design: Federated read across estates, merged on signal_id, partial results reported.
+    acceptance: A failing estate degrades the response honestly instead of hiding data.
+    features:
+
+      - key: E4.F1
+        title: Query broker federation
+        status: closed
+        implements: [ADR-0008]
+        spec: services/query-broker/main.go
+        design: Concurrent fan out with a deadline; merge on signal_id; managed plane wins ties.
+        acceptance: Duplicate merge and partial result behaviour are covered by tests.
+        tasks:
+          - { key: E4.F1.T1, title: Broker fan out and merge, status: closed }
+          - { key: E4.F1.T2, title: Partial result reporting, status: closed }
+
+      - key: E4.F2
+        title: Index backed estate
+        implements: [ADR-0008]
+        spec: infra/cdk/lib/core-stack.ts
+        design: >
+          Replace StubEstate with an implementation over the signal index,
+          partitioned by tenant and subject so a cross tenant read cannot be
+          expressed.
+        acceptance: >
+          A query without tenant scope fails at the type level, not at runtime.
+          Broker tests pass unchanged against the real implementation.
+        tasks:
+          - { key: E4.F2.T1, title: Signal index writer from the bus }
+          - { key: E4.F2.T2, title: Index backed Estate implementation }
+          - { key: E4.F2.T3, title: Tenant scoping enforced structurally }
+
+      - key: E4.F3
+        title: Blob resolution across estates
+        implements: [ADR-0006, ADR-0008]
+        spec: schemas/blob-reference.schema.json
+        design: >
+          Bytes may remain in a self hosted estate during migration. The broker
+          mints short lived references rather than proxying the bytes.
+        acceptance: A reference resolvable_from self_hosted returns a time bounded handle.
+        tasks:
+          - { key: E4.F3.T1, title: Signed handle broker for estate resident blobs }
+
+  - key: E5
+    title: Estate migration tooling
+    priority: 1
+    labels: [migration]
+    spec: docs/architecture.md
+    design: >
+      The measure is cost per tenant migrated and rollback rate. If a migration
+      needs an engineer on a call it reaches only the loudest customers.
+      The tooling is the product.
+    acceptance: >
+      A tenant can be assessed, cut over, and rolled back without a bespoke runbook.
+    features:
+
+      - key: E5.F1
+        title: Edge shipper
+        status: closed
+        implements: [ADR-0007]
+        spec: edge-shipper
+        design: Outbound only, durable checkpoint written atomically after acknowledgement.
+        acceptance: A restart resumes from the checkpoint; replay is absorbed, skipping is not possible.
+        tasks:
+          - { key: E5.F1.T1, title: Outbound shipper with atomic checkpoint, status: closed }
+          - { key: E5.F1.T2, title: Self reported health over the outbound channel }
+
+      - key: E5.F2
+        title: Rule and threshold compatibility report
+        priority: 0
+        implements: [ADR-0009]
+        spec: docs/adr/0009-pinned-scoring-model-version-per-tenant.md
+        design: >
+          Before cutover, classify every tenant authored rule as identical,
+          changed, or dependent on a retired signal type. This is what converts
+          migration from a leap of faith into a reviewable decision.
+        acceptance: >
+          Report names each rule and its classification; a tenant with any changed
+          rule cannot be cut over without explicit acknowledgement.
+        tasks:
+          - { key: E5.F2.T1, title: Static analysis of tenant rules against the taxonomy }
+          - { key: E5.F2.T2, title: Threshold drift estimate under the pinned model }
+          - { key: E5.F2.T3, title: Report generation and cutover gate }
+
+      - key: E5.F3
+        title: Backfill and retention decision
+        implements: [ADR-0008]
+        spec: docs/architecture.md
+        design: >
+          Index and metadata migrate first; bytes may age out under retention
+          instead of moving. For most tenants the retention window is shorter than
+          the migration programme.
+        acceptance: >
+          Per tenant, the tool recommends backfill or age out with the cost of each.
+        tasks:
+          - { key: E5.F3.T1, title: Metadata and index backfill job }
+          - { key: E5.F3.T2, title: Backfill versus age out cost model }
+          - { key: E5.F3.T3, title: Legal hold carries across the boundary }
+
+      - key: E5.F4
+        title: Cutover and rollback
+        implements: [ADR-0008]
+        spec: docs/deployment.md
+        design: Each of the four migration steps is independently reversible.
+        acceptance: A cutover can be reversed within the rollback window with no data loss.
+        tasks:
+          - { key: E5.F4.T1, title: Per tenant cutover state machine }
+          - { key: E5.F4.T2, title: Rollback within window }
+          - { key: E5.F4.T3, title: Cost per tenant and rollback rate metrics }
+
+  - key: E6
+    title: Console
+    priority: 2
+    labels: [ui, angular]
+    spec: ui/console
+    design: One UI across both estates during migration.
+    acceptance: Partial results are visible; scope is never merely cosmetic.
+    features:
+
+      - key: E6.F1
+        title: Console scaffold
+        spec: ui/console/README.md
+        design: Angular with a dev proxy to the broker and control plane.
+        acceptance: ng serve reaches both services without CORS workarounds.
+        tasks:
+          - { key: E6.F1.T1, title: Angular scaffold and proxy config }
+
+      - key: E6.F2
+        title: Honest partial results
+        implements: [ADR-0008]
+        spec: ui/console/README.md
+        design: >
+          Render a banner naming the unavailable estate. A console that silently
+          returns half the data during an investigation is worse than one that errors.
+        acceptance: With one estate down, the UI names it and the result count is qualified.
+        tasks:
+          - { key: E6.F2.T1, title: Estate status banner }
+          - { key: E6.F2.T2, title: Qualify counts when results are partial }
+
+      - key: E6.F3
+        title: Scoped views
+        spec: docs/architecture.md
+        design: Group and user filters are convenience; scope is enforced server side.
+        acceptance: The UI never offers a scope the caller does not hold.
+        tasks:
+          - { key: E6.F3.T1, title: Scope aware filters }
+          - { key: E6.F3.T2, title: Signal timeline with authority provenance }
+
+  - key: E7
+    title: Cloud deployment
+    priority: 2
+    labels: [infra, cdk]
+    spec: infra/cdk
+    design: Small separable stacks, manual dispatch only, destroy as a first class operation.
+    acceptance: A stage can be brought up, smoke tested, and destroyed from the workflow alone.
+    features:
+
+      - key: E7.F1
+        title: Stack verification
+        implements: [ADR-0005]
+        spec: docs/deployment.md
+        design: Core, Ingest, and ControlPlane deploy and destroy independently.
+        acceptance: Destroying ControlPlane loses no data; Ingest redeploys without touching Core.
+        tasks:
+          - { key: E7.F1.T1, title: First deploy of the dev stage }
+          - { key: E7.F1.T2, title: OIDC deploy role and least privilege policy }
+          - { key: E7.F1.T3, title: Independent destroy verified per stack }
+
+      - key: E7.F2
+        title: Cloud smoke path
+        implements: [ADR-0010]
+        spec: docs/local-development.md
+        design: >
+          Local green does not guarantee cloud green. The divergences that bite are
+          IAM, MSK auth, partition behaviour, object lock, and cold starts.
+        acceptance: The smoke path exercises all five and runs before any release.
+        tasks:
+          - { key: E7.F2.T1, title: Smoke test covering the known divergences }
+          - { key: E7.F2.T2, title: Cost guardrail alarm on the dev stage }
+
+# Cross cutting ordering. Within a feature, tasks are sequential by default.
+# These are the edges that are not implied by the hierarchy.
+dependencies:
+  - { blocked: E3.F3, blocker: E2.F1 }      # estate ingest needs real authority
+  - { blocked: E3.F2, blocker: E1.F1 }      # blob ordering needs the envelope
+  - { blocked: E4.F2, blocker: E3.F1 }      # index needs signals arriving
+  - { blocked: E4.F3, blocker: E3.F2 }      # blob resolution needs write ordering
+  - { blocked: E5.F2, blocker: E1.F2 }      # rule analysis needs taxonomy governance
+  - { blocked: E5.F3, blocker: E4.F2 }      # backfill needs the index
+  - { blocked: E5.F4, blocker: E5.F2 }      # no cutover without a compatibility report
+  - { blocked: E5.F4, blocker: E5.F3 }
+  - { blocked: E6.F2, blocker: E4.F1 }      # banner needs partial result reporting
+  - { blocked: E6.F3, blocker: E2.F2 }      # scoped views need subject resolution
+  - { blocked: E7.F2, blocker: E7.F1 }
+  - { blocked: E2.F3, blocker: E2.F1 }
+  - { blocked: E2.F1.T3, blocker: E2.F1.T2 }

@@ -1,0 +1,16 @@
+{
+  "adapter_id": "directory_watch",
+  "version": "0.1.0",
+  "source_system": "local_filesystem",
+  "runtime": "lambda_python",
+  "delivery": "pull_poll",
+  "min_interval_seconds": 30,
+  "capture_modes": ["passive_metadata"],
+  "requires_authority": true,
+  "identity_kinds": ["account_sid", "device_id"],
+  "emits": [
+    { "signal_type": "file_action.create", "category": "file_action", "fidelity": "exact" },
+    { "signal_type": "file_action.modify", "category": "file_action", "fidelity": "exact" },
+    { "signal_type": "file_action.copy_to_removable", "category": "file_action", "fidelity": "exact" }
+  ]
+}

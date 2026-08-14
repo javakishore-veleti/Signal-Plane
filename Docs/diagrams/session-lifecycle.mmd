@@ -1,0 +1,19 @@
+sequenceDiagram
+  participant C as Console
+  participant CP as Control plane
+  participant AG as Authority gate
+  participant AD as Adapter
+  participant B as Event bus
+
+  C->>CP: resolve subject (upn, device id)
+  CP-->>C: subject_id, coverage from adapter manifests
+  C->>CP: open session (subject_id, capture_mode)
+  CP->>AG: evaluate (mode, jurisdiction of subject)
+  AG-->>CP: decision granted, basis, expiry, constraints
+  CP-->>C: session_id, decision_id, expires_at
+  CP->>AD: activate (session_id, decision_id, constraints)
+  loop within schedule window, until expiry
+    AD->>B: envelope stamped with decision_id
+  end
+  Note over AD: expiry or window close, fail closed
+  AD->>CP: session closed (reason)

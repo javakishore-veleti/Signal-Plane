@@ -1,0 +1,29 @@
+# Low latency cache. Holds resolved authority decisions for their bounded
+# lifetime and subject resolution results.
+#
+# Note the deliberate limit: cache the policy decision and the identity mapping,
+# never the observations themselves. Anything cached here would have to be
+# re-justified under retention, residency, and subject access obligations.
+
+name: signal-plane-redis
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: sp-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${REDIS_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - shared
+
+networks:
+  shared:
+    name: ${COMPOSE_NETWORK}
+    external: true

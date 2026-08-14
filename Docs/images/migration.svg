@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="270" viewBox="0 0 1200 270" role="img" aria-label="Migration in four reversible steps: read path moves, new capture moves, history backfills or ages out, then decommission.">
+<title>Migration without a cutover</title>
+<defs><marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M1 1 L9 5 L1 9" fill="none" stroke="#73726c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<g font-family="Segoe UI,Helvetica,Arial,sans-serif">
+
+<rect x="25" y="40" width="265" height="120" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.5"/>
+<text x="50" y="72" font-size="15" font-weight="600" fill="#04342C">1  Read path</text>
+<text x="50" y="102" font-size="14" fill="#0F6E56">Users move to the cloud</text>
+<text x="50" y="124" font-size="14" fill="#0F6E56">console. Data has not</text>
+<text x="50" y="146" font-size="14" fill="#0F6E56">moved anywhere yet.</text>
+
+<rect x="315" y="40" width="265" height="120" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.5"/>
+<text x="340" y="72" font-size="15" font-weight="600" fill="#042C53">2  New capture</text>
+<text x="340" y="102" font-size="14" fill="#185FA5">Collection switches over.</text>
+<text x="340" y="124" font-size="14" fill="#185FA5">The estate stops</text>
+<text x="340" y="146" font-size="14" fill="#185FA5">growing.</text>
+
+<rect x="605" y="40" width="265" height="120" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.5"/>
+<text x="630" y="72" font-size="15" font-weight="600" fill="#412402">3  History</text>
+<text x="630" y="102" font-size="14" fill="#854F0B">Backfill, or let it age</text>
+<text x="630" y="124" font-size="14" fill="#854F0B">out under existing</text>
+<text x="630" y="146" font-size="14" fill="#854F0B">retention.</text>
+
+<rect x="895" y="40" width="265" height="120" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1.5"/>
+<text x="920" y="72" font-size="15" font-weight="600" fill="#2C2C2A">4  Decommission</text>
+<text x="920" y="102" font-size="14" fill="#5F5E5A">After the rollback</text>
+<text x="920" y="124" font-size="14" fill="#5F5E5A">window closes, with</text>
+<text x="920" y="146" font-size="14" fill="#5F5E5A">sign-off.</text>
+
+<g stroke="#73726c" stroke-width="1.6" fill="none" marker-end="url(#m)">
+<path d="M290 100 H 311"/><path d="M580 100 H 601"/><path d="M870 100 H 891"/>
+</g>
+
+<g stroke="#73726c" stroke-width="1.4" fill="none" stroke-dasharray="6 5" marker-end="url(#m)">
+<path d="M1027 160 V 205 H 157 V 164"/>
+</g>
+<rect x="470" y="188" width="250" height="34" rx="17" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+<text x="595" y="210" font-size="14" font-weight="600" fill="#26215C" text-anchor="middle">every step is reversible</text>
+</g>
+</svg>

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://signal-plane.dev/schemas/blob-reference/v1.json",
+  "title": "Blob reference",
+  "description": "Large payloads (screen captures, attachments, recordings) never travel on the event bus. The bus carries this pointer; the bytes sit in the object store under retention and legal hold controls.",
+  "type": "object",
+  "required": ["uri", "content_hash", "media_type", "bytes", "retention_class"],
+  "additionalProperties": false,
+  "properties": {
+    "uri": { "type": "string", "description": "s3://bucket/key in the managed plane, or a broker-resolvable opaque handle when the bytes remain in a self hosted estate." },
+    "content_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "media_type": { "type": "string" },
+    "bytes": { "type": "integer", "minimum": 0 },
+    "encryption": {
+      "type": "object",
+      "properties": {
+        "key_id": { "type": "string", "description": "Customer managed key ARN where the tenant requires key custody." },
+        "algorithm": { "type": "string", "default": "AES256" }
+      }
+    },
+    "retention_class": { "enum": ["transient", "standard", "extended", "indefinite"] },
+    "legal_hold": { "type": "boolean", "default": false, "description": "When true, retention expiry is suspended and deletion is refused at the store, not at the application." },
+    "resolvable_from": { "enum": ["managed", "self_hosted"], "default": "managed" }
+  }
+}

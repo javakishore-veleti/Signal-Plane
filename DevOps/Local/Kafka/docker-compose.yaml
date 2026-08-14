@@ -1,0 +1,75 @@
+# Event transport. Redpanda speaks the Kafka protocol, so services depend on the
+# protocol rather than on a specific broker. Amazon MSK is the cloud counterpart.
+#
+# Topics are created by the bootstrap service on start: one per signal category
+# plus a dead letter topic. Partitioning is by tenant and subject, so ordering
+# within a subject is preserved.
+
+name: signal-plane-kafka
+
+services:
+  kafka:
+    image: redpandadata/redpanda:v24.2.7
+    container_name: sp-kafka
+    restart: unless-stopped
+    command:
+      - redpanda start
+      - --overprovisioned
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --node-id 0
+      - --check=false
+      - --kafka-addr INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      - --advertise-kafka-addr INTERNAL://sp-kafka:29092,EXTERNAL://localhost:${KAFKA_PORT}
+    ports:
+      - "${KAFKA_PORT}:9092"
+      - "${KAFKA_ADMIN_PORT}:9644"
+    volumes:
+      - sp-kafka-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - shared
+
+  kafka-bootstrap:
+    image: redpandadata/redpanda:v24.2.7
+    container_name: sp-kafka-bootstrap
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "for c in application session file_action communication network web content_match language derived; do
+         rpk topic create signals.$$c --brokers sp-kafka:29092 -p 3 -r 1 || true;
+       done;
+       rpk topic create signals.dlq --brokers sp-kafka:29092 -p 1 -r 1 || true;
+       rpk topic list --brokers sp-kafka:29092"
+    restart: "no"
+    networks:
+      - shared
+
+  kafka-console:
+    image: redpandadata/console:v2.7.2
+    container_name: sp-kafka-console
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: sp-kafka:29092
+    ports:
+      - "8090:8080"
+    restart: unless-stopped
+    networks:
+      - shared
+
+volumes:
+  sp-kafka-data:
+
+networks:
+  shared:
+    name: ${COMPOSE_NETWORK}
+    external: true

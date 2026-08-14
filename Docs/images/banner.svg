@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="230" viewBox="0 0 1200 230" role="img" aria-label="Signal Plane. Many sources in, one contract out, nothing collected without permission.">
+<title>Signal Plane</title>
+<g stroke="#7F77DD" stroke-width="2" fill="none" opacity="0.55">
+<path d="M40 60 C 130 60, 130 115, 220 115"/>
+<path d="M40 96 C 130 96, 130 115, 220 115"/>
+<path d="M40 134 C 130 134, 130 115, 220 115"/>
+<path d="M40 170 C 130 170, 130 115, 220 115"/>
+</g>
+<circle cx="40" cy="60" r="5" fill="#7F77DD"/><circle cx="40" cy="96" r="5" fill="#7F77DD"/>
+<circle cx="40" cy="134" r="5" fill="#7F77DD"/><circle cx="40" cy="170" r="5" fill="#7F77DD"/>
+<rect x="220" y="95" width="42" height="42" rx="10" fill="#7F77DD"/>
+<path d="M276 115 H 340" stroke="#5DCAA5" stroke-width="2.5"/>
+<circle cx="352" cy="115" r="6" fill="#5DCAA5"/>
+<text x="400" y="98" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="46" font-weight="600" fill="#7F77DD">Signal Plane</text>
+<text x="402" y="136" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="19" fill="#888780">Many sources in. One contract out.</text>
+<text x="402" y="164" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="19" fill="#888780">Nothing collected without permission.</text>
+</svg>

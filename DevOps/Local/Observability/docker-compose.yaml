@@ -1,0 +1,41 @@
+# Optional. Not started by docker-all-up.sh unless --with-observability is passed,
+# because it is the heaviest stack and is not needed for the data path.
+
+name: signal-plane-observability
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    container_name: sp-otel
+    restart: unless-stopped
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "${OTEL_GRPC_PORT}:4317"
+      - "${OTEL_HTTP_PORT}:4318"
+    networks:
+      - shared
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: sp-grafana
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ADMIN_PASSWORD: signalplane
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    volumes:
+      - sp-grafana-data:/var/lib/grafana
+    networks:
+      - shared
+
+volumes:
+  sp-grafana-data:
+
+networks:
+  shared:
+    name: ${COMPOSE_NETWORK}
+    external: true

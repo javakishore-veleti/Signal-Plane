@@ -1,0 +1,72 @@
+# Governed vocabulary of signal_type values.
+#
+# Rules:
+#   Additive only within a schema_version. Removing or repurposing a key is a
+#   breaking change and needs a new schema_version plus an ADR.
+#   Every key declares its category and the attributes it carries.
+#   Adapters are validated against this file in CI.
+
+version: "1.0"
+
+signal_types:
+  application.focus_change:
+    category: application
+    attributes: { application: string, window_title: string, duration_ms: integer }
+
+  application.process_start:
+    category: application
+    attributes: { executable: string, command_line: string, parent: string }
+
+  session.active:
+    category: session
+    attributes: { duration_ms: integer }
+
+  session.idle:
+    category: session
+    attributes: { duration_ms: integer }
+
+  file_action.create:
+    category: file_action
+    attributes: { path: string, bytes: integer, volume_kind: string }
+
+  file_action.modify:
+    category: file_action
+    attributes: { path: string, bytes: integer, volume_kind: string }
+
+  file_action.delete:
+    category: file_action
+    attributes: { path: string, volume_kind: string }
+
+  file_action.copy_to_removable:
+    category: file_action
+    attributes: { path: string, bytes: integer, device_serial: string }
+
+  file_action.print:
+    category: file_action
+    attributes: { path: string, pages: integer, printer: string }
+
+  communication.message_sent:
+    category: communication
+    attributes: { channel: string, recipient_count: integer, has_attachment: boolean }
+
+  network.connection:
+    category: network
+    attributes: { destination: string, port: integer, bytes_out: integer, application: string }
+
+  web.page_view:
+    category: web
+    attributes: { host: string, classification: string, duration_ms: integer }
+
+  content_match.keyword:
+    category: content_match
+    attributes: { rule_id: string, term_class: string, context_ref: string }
+    emits_payload_ref: true
+
+  language.sentiment:
+    category: language
+    attributes: { polarity: number, model_version: string }
+    fidelity: inferred
+
+  derived.risk_score:
+    category: derived
+    attributes: { score: integer, model_version: string, contributors: array }
