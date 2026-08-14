@@ -220,8 +220,8 @@ EPICS = [
     E(
         "Collection authority",
         AUTH,
-        "Deny by default. Mode determines the approver. Jurisdiction follows the subject. Every grant is bounded. Every denial is actionable.",
-        "subject-0002 in DE is denied continuous_screen with a reason naming the jurisdiction; subject-0001 in US-NC is granted with expires_at.",
+        "Deny by default. Mode determines the approver. Jurisdiction follows the subject. Every grant is bounded. Every denial is actionable. Identity, authority, sessions, registry, and policy are packages in one Spring Boot process. Telemetry never enters it.",
+        "subject-0002 in DE is denied continuous_screen with a reason naming the jurisdiction; subject-0001 in US-NC is granted with expires_at. Control-plane OpenAPI has no envelope ingest.",
         priority=0, labels=["control-plane", "java", "governance"], phase=2,
         features=[
             F("Persisted jurisdictional policy", "DevOps/Local/Postgres/init/01-schema.sql",
@@ -328,6 +328,17 @@ EPICS = [
                     [T("Persist every evaluate result"),
                      T("Lookup API by decision_id")]),
               ]),
+            F("One control-plane process", "Middleware/control-plane",
+              "Identity, authority, sessions, adapter registry, and policy are packages in one Spring Boot application. They are not separately deployed Java services.",
+              "A single ControlPlaneApplication serves /v1/authority, /v1/sessions, /v1/subjects, /v1/adapters. No ingest or scoring endpoints exist on it.",
+              implements=["ADR-0005"],
+              stories=[
+                  S("Integrator consults authority without putting envelopes through Java", TSA,
+                    "Plane split. Opposite load profiles. One long-lived process, not a Java fleet.",
+                    "Control-plane OpenAPI has no envelope ingest route; adapters produce to the bus.",
+                    [T("Keep capabilities as packages in ControlPlaneApplication"),
+                     T("Contract test: no telemetry ingest on the control-plane port")]),
+              ]),
         ],
     ),
     E(
@@ -382,7 +393,7 @@ EPICS = [
     E(
         "Sessions and coverage",
         "docs/architecture.md",
-        "Coverage is derived from registered manifests. Sessions terminate on a rule: schedule, expiry, retention, or case closure. Explicit close is the exception.",
+        "Coverage is derived from registered manifests. Sessions terminate on a rule: schedule, expiry, retention, or case closure. Explicit close is the exception. These APIs live on the same Spring Boot process as collection authority, not a second deployable.",
         "Coverage for a subject lists adapters, fidelity, and modes. A session outside its window is closed without an operator.",
         priority=0, labels=["control-plane", "java"], phase=2,
         features=[
@@ -563,6 +574,16 @@ EPICS = [
                     [T("Validation consumer before index write"),
                      T("Per-adapter divert topic and metric")]),
               ]),
+            F("Bus consumers", "Middleware/consumers",
+              "Validation, diversion, and index writes are consumers of the envelope bus. They are not control-plane handlers and they are not adapters.",
+              "A malformed record never reaches the index; a valid one is indexed without an HTTP call to the control plane.",
+              stories=[
+                  S("The index is filled by a bus consumer", PRD,
+                    "FR-5.1 downstream. Control plane stays off this path.",
+                    "Consumer in Middleware/consumers writes the tenant-first index; control-plane CPU does not track ingest volume.",
+                    [T("Consumer module layout under Middleware/consumers"),
+                     T("Index writer consumes the category topic")]),
+              ]),
         ],
     ),
     E(
@@ -691,7 +712,7 @@ EPICS = [
     E(
         "Scoring and tenant rules",
         "docs/adr/0009-pinned-scoring-model-version-per-tenant.md",
-        "Derived values carry model_version. Version is pinned per tenant. Platform migration never coincides with a model change. Rules cannot be authored unbounded or against missing vocab.",
+        "Derived values carry model_version. Version is pinned per tenant. Platform migration never coincides with a model change. Rules cannot be authored unbounded or against missing vocab. Scoring is a bus consumer, not a control-plane service.",
         "A tenant with model 1.4.0 never sees 1.5.0 scores until a separate upgrade with a comparison period.",
         priority=1, labels=["scoring"], phase=4, status="deferred",
         features=[
@@ -722,7 +743,7 @@ EPICS = [
                      T("Reject unbounded window or threshold")]),
               ]),
             F("Dual-run comparison before upgrade", PRD,
-              "FR-7.4 Should. Both versions computed; divergence reported.",
+              "FR-7.4 Should. Both versions computed by a bus consumer; divergence reported.",
               "Comparison report exists before pin moves.",
               implements=["ADR-0009"],
               stories=[
@@ -731,6 +752,17 @@ EPICS = [
                     "Report names percent of subjects whose band changed.",
                     [T("Shadow-run second model version"),
                      T("Divergence report")]),
+              ]),
+            F("Scoring is a bus consumer", "Middleware/consumers",
+              "Derived scores are written by a consumer of the envelope bus. The control plane never scores and never sits on the ingest path.",
+              "No scoring code in Middleware/control-plane; the consumer stamps model_version from the tenant pin.",
+              implements=["ADR-0009"],
+              stories=[
+                  S("A derived score is produced without calling the control plane on the ingest path", PRD,
+                    "Plane split. Scoring is data-plane work.",
+                    "Consumer reads envelopes and writes derived.risk_score; control-plane request rate does not track ingest volume.",
+                    [T("Scoring consumer skeleton in Middleware/consumers"),
+                     T("CI: control-plane sources contain no scoring model")]),
               ]),
         ],
     ),
@@ -773,7 +805,7 @@ EPICS = [
     E(
         "Migration programme",
         TSA,
-        "Assessment, compatibility, read-path first, collection switch, history, rollback, decommission. Tooling is the product. Cost per tenant and rollback rate are first-class metrics.",
+        "Assessment, compatibility, read-path first, collection switch, history, rollback, decommission. Tooling is the product. Cost per tenant and rollback rate are first-class metrics. Batch work lives in Middleware/etls.",
         "A tenant is assessed, cut over, and rolled back without a bespoke runbook. Changed compatibility cannot cut over without recorded acknowledgement.",
         priority=1, labels=["migration"], phase=4, status="deferred",
         features=[
@@ -785,7 +817,7 @@ EPICS = [
                   S("Migration operator gets an assessment rather than a spreadsheet", PRD,
                     "§12.4 legacy exposure index.",
                     "POST assess returns the six dimensions and a recommended sequence.",
-                    [T("Assessment job: volume, holds, jurisdictions, rules"),
+                    [T("ETL assessment job in Middleware/etls: volume, holds, jurisdictions, rules"),
                      T("Exposure score persisted on tenant")]),
                   S("Jurisdiction check happens before any other migration step", TSA,
                     "Discovering unlawfulness late invalidates the rest.",
@@ -801,7 +833,7 @@ EPICS = [
                   S("Cutover is a reviewable decision, not an act of faith", PRD,
                     "FR-8.11, FR-8.12, UC7.",
                     "A tenant with one changed rule cannot enter cutover without an ack record.",
-                    [T("Static analysis of tenant rules against the taxonomy"),
+                    [T("ETL: static analysis of tenant rules against the taxonomy"),
                      T("Threshold drift estimate under the pinned model"),
                      T("Report generation and cutover gate")]),
               ]),
@@ -814,7 +846,7 @@ EPICS = [
                     "UC8 first step.",
                     "Federation returns estate data; no data copy has occurred; rollback is DNS/config.",
                     [T("Migration state: read_path_managed"),
-                     T("Console pointed at broker only")]),
+                     T("Both portals pointed at the broker only")]),
               ]),
             F("Collection switch", TSA,
               "FR-8.7. New collection to managed plane; estate stops growing. Reversible by redirect.",
@@ -834,7 +866,7 @@ EPICS = [
                   S("Migration operator chooses expire when retention is shorter than the programme", PRD,
                     "Most tenants. Bulk bytes have no cheap option.",
                     "Tool shows backfill $X vs expire $Y; holds listed as must-move.",
-                    [T("Metadata and index backfill job"),
+                    [T("ETL: metadata and index backfill in Middleware/etls"),
                      T("Backfill versus age out cost model"),
                      T("Legal hold carries across the boundary")]),
               ]),
@@ -855,17 +887,27 @@ EPICS = [
                     [T("Decommission gate and approver"),
                      T("Cost per tenant and rollback rate metrics")]),
               ]),
+            F("Migration jobs as ETLs", "Middleware/etls",
+              "Assessment, compatibility, and history backfill are batch jobs under Middleware/etls. They are not control-plane request handlers and they do not sit on the telemetry path.",
+              "Jobs run from Middleware/etls; they read stores and write artefacts the admin portal displays.",
+              stories=[
+                  S("Migration operator runs assessment as a batch job", PRD,
+                    "UC7. Cost per tenant falls only if this is tooling.",
+                    "The ETL package produces the assessment artefact used by the admin portal.",
+                    [T("ETL package layout under Middleware/etls"),
+                     T("Assessment and compatibility jobs share the package")]),
+              ]),
         ],
     ),
     E(
         "Admin portal",
         "Portals/admin-portal",
-        "Administrators configure policy, scope, retention, adapters, sessions, and migration. Unsafe states are hard to express. Consequence of widening collection is shown.",
-        "Admin can set policy and see the capture-mode consequence. Scope pickers only list held scope. Migration state is visible.",
+        "Administrators configure policy, scope, retention, adapters, sessions, and migration. Unsafe states are hard to express. Consequence of widening collection is shown. Shares Portals/shared with the client portal. Source vendors are not a portal audience; they add adapters on the paved road.",
+        "Admin can set policy and see the capture-mode consequence. Scope pickers only list held scope. Migration state is visible. There is no third portal for source vendors.",
         priority=2, labels=["ui", "angular"], phase=4, status="deferred",
         features=[
             F("Admin scaffold and contract client", "Portals/README.md",
-              "Angular + proxy to control plane and broker. Shared generated models.",
+              "Angular + proxy to control plane and broker. Generated models live in Portals/shared; both apps depend on it.",
               "ng serve reaches /v1/authority and /v1/adapters without CORS hacks.",
               stories=[
                   S("Administrator loads the portal against local middleware", "Portals/README.md",
@@ -873,6 +915,11 @@ EPICS = [
                     "ng serve --proxy-config reaches control plane.",
                     [T("Angular admin scaffold and proxy config"),
                      T("Shared generated API client")]),
+                  S("A source vendor does not get a portal; they ship an adapter", "Portals/README.md",
+                    "Two audiences only: administrators and investigators/compliance. Integrators use the paved road.",
+                    "Portals/ contains admin-portal, client-portal, and shared. No vendor or marketplace app.",
+                    [T("Do not scaffold a third portal app"),
+                     T("Paved-road docs are the integrator surface")]),
               ]),
             F("Policy administration with consequences", PRD,
               "FR-9.6. Widening collection is obvious.",
@@ -918,12 +965,12 @@ EPICS = [
     E(
         "Client portal",
         "Portals/client-portal",
-        "Investigators and compliance owners. Timelines, case views, provenance, export. Degradation is displayed. Scope is reflected, not enforced here.",
+        "Investigators and compliance owners. Timelines, case views, provenance, export. Degradation is displayed. Scope is reflected, not enforced here. Shares Portals/shared with the admin portal.",
         "With one estate down the banner names it and counts are qualified. Timeline shows decision_id. Export is a documented format.",
         priority=2, labels=["ui", "angular"], phase=4, status="deferred",
         features=[
             F("Client scaffold", "Portals/README.md",
-              "Same proxy and shared models as admin. Different audience, different obligations.",
+              "Same proxy as admin. Generated models come from Portals/shared. Different audience, different obligations.",
               "ng serve reaches /v1/signals.",
               stories=[
                   S("Investigator loads the client portal against local broker", "Portals/README.md",
@@ -1161,6 +1208,14 @@ DEPENDENCIES = [
     {"blocked": "E10.F1", "blocker": "E18.F1"},
     # Shipper before estate ingest
     {"blocked": "E6.F2", "blocker": "E11.F1"},
+    # One Spring Boot process after policy persistence exists
+    {"blocked": "E2.F8", "blocker": "E2.F1"},
+    # Index writer consumer before index-backed read
+    {"blocked": "E9.F2", "blocker": "E7.F3"},
+    # Scoring consumer after envelope
+    {"blocked": "E10.F4", "blocker": "E1.F1"},
+    # Assessment jobs need the ETL package
+    {"blocked": "E12.F1", "blocker": "E12.F7"},
 ]
 
 
