@@ -104,10 +104,11 @@ This matters more here than in a typical repo. Issue state and code state are de
 ## First-time setup
 
 ```bash
-bd init --quiet
-python3 tools/beads-sync.py --dry-run     # inspect
-python3 tools/beads-sync.py               # apply
-bd ready --explain
+git config beads.role maintainer    # canonical clone; see Docs/BEADS-COMMAND-GUIDE.md
+bd init --quiet --role maintainer
+python3 Tools/beads-sync.py --dry-run     # inspect
+python3 Tools/beads-sync.py               # apply
+bd ready --type task --explain
 bd dolt push
 ```
 

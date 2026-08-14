@@ -1,7 +1,7 @@
 # Beads Command Guide
 
 **Purpose:** A working reference for using `bd` to track a project from installation through delivery.
-**Reference version:** Documentation for bd 1.1.0; the published CLI reference covers 108 top level commands.
+**Reference version:** Documentation for bd 1.2.1; the published CLI reference covers 108 top level commands.
 **Date:** 14 August 2026
 
 ---
@@ -23,6 +23,41 @@ bd prime                       # workflow context written for agents
 ```
 
 `bd prime` is worth running at the start of any Claude Code or Cursor session. It emits the workflow context in a form agents consume well.
+
+---
+
+## Signal-Plane: from empty graph to ready queue
+
+This repository does **not** seed work by hand. `Plan/backlog.yaml` is the source of truth. `Tools/beads-sync.py` projects it into beads and never reads back. Creating planned epics or features with `bd create` makes the plan and the graph diverge.
+
+`bd init` leaves the graph empty. Until the sync runs, `bd ready` is a truthful empty list, not a missing installation.
+
+### First-time setup (canonical clone)
+
+```
+git config beads.role maintainer
+bd init --quiet --role maintainer     # already done in this clone
+python3 Tools/beads-sync.py --dry-run
+python3 Tools/beads-sync.py
+bd ready --type task --explain
+```
+
+Role must be **maintainer** in this repo. `contributor` routes `bd create` to `~/.beads-planning`. If that workspace has no Dolt database, `bd ready` and `bd list` fail with `failed to open routed store` even when the in-repo graph is healthy.
+
+Do not add `repos.additional` unless every listed path is itself a `bd init`'d workspace. An empty `~/.beads-planning/.beads/` directory is enough to take down the ready queue. Remove a bad entry with `bd repo remove <path>`.
+
+The sync writes `Plan/.bead-ids.json`, mapping stable plan keys (`E2.F1.T2`) to hash IDs (`Signal-Plane-7ew.1.2`). Commit that file. Re-running the sync is idempotent: existing keys are left alone, new plan items are created, items marked `status: closed` in the plan are closed.
+
+After a successful sync, `bd ready` includes epics and features that have no blockers. For implementation work, filter to tasks:
+
+```
+bd ready --type task --explain
+bd update <id> --claim
+```
+
+Discovered work (bugs found while implementing) is the exception: create those directly with `bd create` and `--deps discovered-from:<id>`. Do not put them in `backlog.yaml`.
+
+See also `Docs/development-workflow.md`.
 
 ---
 
@@ -88,8 +123,11 @@ Role configuration determines where issues are routed:
 git config beads.role maintainer     # repo owner or push access, issues in-repo
 git config beads.role contributor    # fork contributor, separate planning repo
 git config --get beads.role
+bd context                           # shows role, beads dir, and database
 bd doctor                            # confirms role is configured
 ```
+
+In Signal-Plane the canonical clone is a maintainer workspace. Contributor role plus an uninitialized `~/.beads-planning` is what produced an empty, unlistable ready queue after `bd init`. `bd context` is the check: `beads dir` must be this repo's `.beads/`, and `role` must be `maintainer`.
 
 Recovery and fresh clones:
 
@@ -229,7 +267,7 @@ bd create --graph plan.json             # a dependency graph from a JSON plan
 bd create --graph plan.json --dry-run   # preview first
 ```
 
-`--graph` is the right tool for seeding an entire backlog in one operation, and it applies dependencies as part of the same execution. Confirm the JSON shape with `bd help --doc create` before writing the file; the format is not in the published prose documentation.
+`--graph` is the generic tool for seeding a backlog from JSON. **This repository does not use it.** Planned work is projected from `Plan/backlog.yaml` with `python3 Tools/beads-sync.py`. Use `--graph` only if you are following upstream beads examples outside this project.
 
 ### 5.4 Hierarchy
 
@@ -340,7 +378,8 @@ External dependencies always block, and are evaluated at query time.
 ## 7. The daily loop **[verified]**
 
 ```
-bd ready                                 # unblocked work
+bd ready                                 # unblocked work (epics, features, and tasks)
+bd ready --type task                     # implementation frontier in this repo
 bd ready --explain                       # and why, including what is blocked
 bd ready --json                          # machine readable
 bd ready --explain --json
@@ -349,7 +388,6 @@ bd ready --priority 1
 bd ready --label backend
 bd ready --assignee alice
 bd ready --unassigned
-bd ready --type task
 bd ready --sort oldest
 
 bd update <id> --claim                   # assign to self, set in_progress
@@ -555,6 +593,14 @@ bd mail                                  # mail operations via a provider
 
 Worktrees share one `.beads` workspace. Hash based IDs are what make concurrent creation across agents and branches safe: two agents cannot mint the same ID, so merges never renumber work.
 
+`repos.additional` hydrates extra workspaces into the same ready query. Every additional path must contain a real embedded Dolt database (`.beads/embeddeddolt/`). A git repo with an empty `.beads/` directory fails the whole query:
+
+```
+failed to open routed store at /Users/.../.beads-planning: embeddeddolt: no embedded database
+```
+
+Fix: `bd repo remove <path>`, or `bd init --quiet --role maintainer` inside that path, then `bd ready` again. Signal-Plane's ready queue should come from this repo; do not attach a personal planning repo unless you intend those issues to appear here.
+
 ---
 
 ## 13. Memory **[from index]**
@@ -665,46 +711,39 @@ Prefer `bd defer` over closing something you intend to return to. A deferred ite
 **Set up once.**
 
 ```
-bd init --quiet
+git config beads.role maintainer
+bd init --quiet --role maintainer
 bd setup claude
 bd setup cursor
+bd context                       # beads dir is this repo; role is maintainer
 bd doctor
 bd dolt remote list
 ```
 
-**Seed the plan.** Create decision beads for your architecture records, then epics, then features under them, then tasks under those. Give every bead `--spec-id`, `--design`, and `--acceptance`; without them the bead is a title, not a specification.
+**Seed the plan from the spec, not by hand.** Edit `Plan/backlog.yaml`. Every item needs `spec`, `design`, and `acceptance` at the level that owns them (epics and features carry the specification; tasks inherit the parent's intent). Then project:
 
 ```
-bd create "..." -t decision --spec-id docs/adr/0004-....md
-bd create "..." -t epic -p 0 --spec-id ... --design ... --acceptance ...
-bd create "..." -t feature --parent <epic> --spec-id ... --design ... --acceptance ...
-bd create "..." -t task --parent <feature> --spec-id ... --design ... --acceptance ...
+python3 Tools/beads-sync.py --dry-run
+python3 Tools/beads-sync.py
 ```
 
-**Wire the ordering.** Sequential dependencies within a feature; cross cutting edges between features. Attach decisions with `--type related` so reasoning shows without blocking.
-
-```
-bd dep add <later> <earlier>
-bd dep add <feature> <decision> --type related
-bd dep cycles
-bd graph --all
-```
+The sync creates decisions, epics, features, and tasks; wires sequential task edges and the `dependencies:` block; attaches ADRs with `--type related`; and closes items already marked `status: closed`. Do not `bd create` planned epics or features. `Plan/.bead-ids.json` is the idempotency map; commit it.
 
 **Verify the plan holds together.**
 
 ```
-bd ready --explain               # is the frontier what you expect
+bd ready --type task --explain   # implementation frontier, not the epics
 bd blocked                       # is anything blocked that should not be
+bd dep cycles
 bd lint                          # any bead missing its specification content
 bd stats
-bd dolt push
 ```
 
 **Work it, each session.**
 
 ```
 bd prime
-bd ready --explain
+bd ready --type task --explain
 bd update <id> --claim
 # ... implement ...
 bd create "..." --deps discovered-from:<id>     # as you find things

@@ -21,27 +21,39 @@ decisions:
   - key: ADR-0002
     title: One normalized envelope is the integration contract
     spec: docs/adr/0002-normalized-envelope-as-integration-contract.md
+    status: closed
   - key: ADR-0003
     title: One adapter per source
     spec: docs/adr/0003-adapter-per-source-not-shared-ingest.md
+    status: closed
   - key: ADR-0004
     title: Authority gate precedes capture
     spec: docs/adr/0004-authority-gate-precedes-capture.md
+    status: closed
   - key: ADR-0005
     title: Control plane stays off the telemetry hot path
     spec: docs/adr/0005-control-plane-off-the-telemetry-hot-path.md
+    status: closed
   - key: ADR-0006
     title: Large payloads travel by reference
     spec: docs/adr/0006-blobs-by-reference-never-on-the-bus.md
+    status: closed
   - key: ADR-0007
     title: Self hosted estate ships outbound only
     spec: docs/adr/0007-outbound-only-edge-shipper.md
+    status: closed
   - key: ADR-0008
     title: Federated read path, no cutover
     spec: docs/adr/0008-federated-read-path-during-migration.md
+    status: closed
   - key: ADR-0009
     title: Scoring model version pinned per tenant
     spec: docs/adr/0009-pinned-scoring-model-version-per-tenant.md
+    status: closed
+  - key: ADR-0010
+    title: Local first development, CDK only for cloud
+    spec: docs/adr/0010-local-first-development-cdk-for-cloud.md
+    status: closed
 
 epics:
 
@@ -294,7 +306,6 @@ epics:
 
       - key: E5.F1
         title: Edge shipper
-        status: closed
         implements: [ADR-0007]
         spec: edge-shipper
         design: Outbound only, durable checkpoint written atomically after acknowledgement.

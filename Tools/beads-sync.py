@@ -37,13 +37,17 @@ class Sync:
         self.linked = 0
         self.skipped = 0
 
-    def bd(self, args: list[str], capture: bool = True) -> str:
+    def bd(self, args: list[str], capture: bool = True, ok_stderr: tuple[str, ...] = ()) -> str:
         if self.dry_run:
             print("  bd " + " ".join(args))
             return f"dry-{len(self.ids) + self.created}"
         out = subprocess.run(["bd", *args], capture_output=capture, text=True)
         if out.returncode != 0:
-            raise RuntimeError(f"bd {' '.join(args)} failed: {out.stderr.strip()}")
+            err = (out.stderr or out.stdout or "").strip()
+            lowered = err.lower()
+            if any(needle in lowered for needle in ok_stderr):
+                return out.stdout.strip()
+            raise RuntimeError(f"bd {' '.join(args)} failed: {err}")
         return out.stdout.strip()
 
     def create(self, key: str, item: dict, kind: str, parent: str | None = None) -> str:
@@ -85,13 +89,22 @@ class Sync:
         args = ["dep", "add", blocked, blocker]
         if dep_type:
             args += ["--type", dep_type]
-        self.bd(args)
+        self.bd(args, ok_stderr=("already exists", "duplicate", "already has"))
         self.linked += 1
 
     def close_if_done(self, key: str, item: dict) -> None:
         if item.get("status") != "closed" or self.dry_run:
             return
-        self.bd(["close", self.ids[key], "--reason", "delivered before beads adoption"])
+        try:
+            self.bd(
+                ["close", self.ids[key], "--reason", "delivered before beads adoption"],
+                ok_stderr=("already closed", "is closed"),
+            )
+        except RuntimeError as exc:
+            if "open child" in str(exc).lower():
+                print(f"  ! not closing {key} ({self.ids[key]}): open children remain")
+                return
+            raise
 
     def save(self) -> None:
         if not self.dry_run:
@@ -146,8 +159,13 @@ def main() -> int:
     for edge in plan.get("dependencies", []):
         s.dep(edge["blocked"], edge["blocker"])
 
+    s.save()
+
     print("\nclosing already delivered items")
+    for d in plan.get("decisions", []):
+        s.close_if_done(d["key"], d)
     for epic in plan["epics"]:
+        s.close_if_done(epic["key"], epic)
         for feat in epic.get("features", []):
             for task in feat.get("tasks", []):
                 s.close_if_done(task["key"], task)

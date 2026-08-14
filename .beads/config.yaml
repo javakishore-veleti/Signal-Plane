@@ -72,9 +72,5 @@
 # - github.token    → use GITHUB_TOKEN env var instead
 
 sync.remote: "git+https://github.com/javakishore-veleti/Signal-Plane.git"
-repos:
-    primary: "."
-    additional:
-        - "/Users/vavkkishore/.beads-planning"
 export:
-    auto: true
+  auto: true
